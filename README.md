@@ -45,10 +45,12 @@ At minimum, the important folders/files are:
 
 1. Start with a clean Natro Macro folder if possible.
 2. Copy Ray's patcher and patch folders into the Natro root.
-3. Run `patcher.ahk`.
-4. Let it patch the macro files.
-5. Start Natro normally.
-6. Check the `Extensions` tab to confirm the patch applied.
+   -<img width="624" height="324" alt="image" src="https://github.com/user-attachments/assets/beab6e00-238c-4897-8eb7-d91d3fbd1cf7" />
+
+4. Run `patcher.ahk`.
+5. Let it patch the macro files.
+6. Start Natro normally.
+7. Check the `Extensions` tab to confirm the patch applied.
 
 ## If patching an already-patched Natro
 
