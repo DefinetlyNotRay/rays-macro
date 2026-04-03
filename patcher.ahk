@@ -1876,7 +1876,7 @@ if FileExist(natroPath) {
         '`t`treturn 0',
         '',
         '`ttimeUntilBlueReady := 2700 - (nowUnix() - lastUse)',
-        '`treturn (timeUntilBlueReady <= 780 && timeUntilBlueReady > 720)',
+        '`treturn (timeUntilBlueReady <= 660 && timeUntilBlueReady > 600)',
         '}',
         'nm_HandlePinePreGlitter(fieldName, field_type){',
         '`tglobal GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason',
