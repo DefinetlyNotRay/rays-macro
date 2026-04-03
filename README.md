@@ -11,6 +11,7 @@ This guide explains how to install Ray's TadSync patch onto almost any Natro Mac
 - Sticker Stack Interrupt
 - Glitter Extend
 - Pre-Glitter
+- Force Hourlies (?hr)
 - Boosted Enzyme Only
 - StatMonitor theme + extra rows/assets
 - AutoJelly / other Ray patch additions, depending on the patch files included
