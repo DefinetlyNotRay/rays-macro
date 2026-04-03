@@ -1,6 +1,7 @@
-# Ray's TadSync Patch Installer Guide
+# Ray's Macro Patch Installer Guide
 
 This guide explains how to install Ray's TadSync patch onto almost any Natro Macro version.
+## If you are confuse dm @DefinetlyNotRay on discord for help!
 
 ## What this patch adds
 
