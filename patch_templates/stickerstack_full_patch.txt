@@ -1,0 +1,127 @@
+nm_StickerStack(resetBeforeTravel := 1){
+	global StickerStackCheck, LastStickerStack, StickerStackItem, StickerStackMode, StickerStackTimer, StickerStackHive, StickerStackCub, StickerStackVoucher, ForceStickerStackInterrupt, SC_E, bitmaps
+	; Made by @definetlynotray on discord
+
+	if !((ForceStickerStackInterrupt || StickerStackCheck) && (ForceStickerStackInterrupt || (nowUnix()-LastStickerStack)>StickerStackTimer))
+		return 0
+
+	stackSucceeded := 0
+	loop 5 {
+		if (resetBeforeTravel)
+			nm_Reset(2, 2000, 0, 1)
+		nm_setStatus("Traveling", "Sticker Stack" ((A_Index > 1) ? " (Attempt " A_Index ")" : ""))
+
+		nm_gotoCollect("stickerstack")
+		GetRobloxClientPos()
+
+		searchRet := nm_imgSearch("e_button.png",30,"high")
+		If (searchRet[1] = 0) {
+			sendinput "{" SC_E " down}"
+			Sleep 100
+			sendinput "{" SC_E " up}"
+			sleep 500 ;//todo: wait for GUI with timeout instead of fixed time
+
+			; detect stack boost time
+			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-275 "|" windowY+4*windowHeight//10 "|550|220")
+			Loop 1 {
+				if (Gdip_ImageSearch(pBMScreen, bitmaps["stickerstackdigits"][")"], &pos, 275, , , 45, 20) = 1) {
+					x := SubStr(pos, 1, InStr(pos, ",")-1)
+					(digits := Map()).Default := ""
+					Loop 10 {
+						n := 10-A_Index
+						Gdip_ImageSearch(pBMScreen, bitmaps["stickerstackdigits"][n], &pos, x, , , 45, 20, , , 4, , "`n")
+						Loop Parse pos, "`n"
+							if (A_Index & 1)
+								digits[Integer(A_LoopField)] := n
+					}
+
+					num := ""
+					for x,y in digits
+						num .= y
+
+					if ((StrLen(num) = 4) && (SubStr(num, 4) = "0")) { ; check valid time before updating
+						nm_setStatus("Detected", "Stack Boost Time: " hmsFromSeconds(time := 60 * SubStr(num, 1, 2) + SubStr(num, 3)))
+						if (StickerStackMode = 0)
+							StickerStackTimer := time
+						break
+					}
+				}
+				nm_setStatus("Error", "Unable to detect Stack Boost time!")
+			}
+
+			; check if sticker is available to donate
+			if (InStr(StickerStackItem, "Sticker") && (((Gdip_ImageSearch(pBMScreen, bitmaps["stickernormal"], &pos, , , 275, , 25) = 1) && (stack := "Sticker"))
+				|| ((Gdip_ImageSearch(pBMScreen, bitmaps["stickernormalalt"], &pos, , , 275, , 25) = 1) && (stack := "Sticker"))
+				|| ((StickerStackHive = 1) && (Gdip_ImageSearch(pBMScreen, bitmaps["stickerhive"], &pos, , , 275, , 25) = 1) && (stack := "Hive Skin"))
+				|| ((StickerStackCub = 1) && (Gdip_ImageSearch(pBMScreen, bitmaps["stickercub"], &pos, , , 275, , 25) = 1) && (stack := "Cub Skin"))
+				|| ((StickerStackVoucher = 1) && (Gdip_ImageSearch(pBMScreen, bitmaps["stickervoucher"], &pos, , , 275, , 25) = 1) && (stack := "Voucher")))) {
+				nm_setStatus("Stacking", stack)
+				MouseMove windowX+windowWidth//2-275+SubStr(pos, 1, InStr(pos, ",")-1)+26, windowY+4*windowHeight//10+SubStr(pos, InStr(pos, ",")+1)-10 ; select sticker
+				if (StickerStackMode = 0)
+					StickerStackTimer += 10
+			} else if InStr(StickerStackItem, "Tickets") {
+				nm_setStatus("Stacking", stack := "Tickets")
+				MouseMove windowX+windowWidth//2+105, windowY+4*windowHeight//10-78 ; select tickets
+			} else { ; StickerStackItem = "Sticker", and nosticker was found or error
+				nm_setStatus("Error", "No Stickers left to stack!`nSticker Stack has been disabled.")
+				StickerStackCheck := 0
+				Sleep 500
+				sendinput "{" SC_E " down}"
+				Sleep 100
+				sendinput "{" SC_E " up}"
+				break
+			}
+			Sleep 100
+			Click
+			Gdip_DisposeImage(pBMScreen)
+
+			i := 0
+			loop 16 {
+				sleep 250
+				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
+				if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1)-50, windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
+					sleep 150
+					Click
+					sleep 100
+					; voucher separate for aesthetic
+					if ((++i >= 4) && !InStr(stack, "Skin") && !(stack="Voucher")) { ; Yes/No prompt appeared too many times, assume this is not a regular sticker
+						Gdip_DisposeImage(pBMScreen)
+						nm_setStatus("Error", "Yes/No appeared too many times!")
+						Sleep 500
+						sendinput "{" SC_E " down}"
+						Sleep 100
+						sendinput "{" SC_E " up}"
+						break 2
+					}
+				} else if (i > 0) {
+					Gdip_DisposeImage(pBMScreen)
+					break
+				} else if (A_Index = 16) {
+					Gdip_DisposeImage(pBMScreen)
+					nm_setStatus("Error", "No Tickets left to use!`nSticker Stack has been disabled.")
+					StickerStackCheck := 0
+					Sleep 500
+					sendinput "{" SC_E " down}"
+					Sleep 100
+					sendinput "{" SC_E " up}"
+					break 2
+				}
+				Gdip_DisposeImage(pBMScreen)
+			}
+			Sleep 2000
+			nm_SetStatus("Collected", "Sticker Stack")
+			stackSucceeded := 1
+			break
+		}
+	}
+	if (stackSucceeded && StickerStackCheck = 1) {
+		LastStickerStack:=nowUnix()
+		IniWrite LastStickerStack, "settings\nm_config.ini", "Boost", "LastStickerStack"
+		if (StickerStackMode = 0) {
+			MainGui["StickerStackTimer"].Value := StickerStackTimer
+			IniWrite StickerStackTimer, "settings\nm_config.ini", "Boost", "StickerStackTimer"
+		}
+	}
+	return stackSucceeded
+}

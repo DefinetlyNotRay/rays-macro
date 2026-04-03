@@ -1,0 +1,785 @@
+﻿nm_BitterberryFeeder(*)
+{
+	; Made by @definetlynotray on discord
+	if !GetRobloxHWND()
+	{
+		MsgBox "You must have Bee Swarm Simulator open to use this!", "Bitterberry Auto-Feeder", 0x40030 " T20"
+		return
+	}
+
+	script :=
+	(
+	'
+	#NoTrayIcon
+	; Made by @definetlynotray on discord
+	#SingleInstance Force
+
+	#Include "%A_ScriptDir%\lib"
+	#Include "Gdip_All.ahk"
+	#Include "Gdip_ImageSearch.ahk"
+	#Include "Roblox.ahk"
+	#Include "nm_OpenMenu.ahk"
+	#Include "nm_InventorySearch.ahk"
+	#Include "nowUnix.ahk"
+
+	CoordMode "Mouse", "Screen"
+	OnExit(ExitFunc)
+	pToken := Gdip_Startup()
+
+	(bitmaps := Map()).CaseSense := 0
+	bitmaps["itemmenu"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAACcAAAAuAQAAAACD1z1QAAAAAnRSTlMAAHaTzTgAAAB4SURBVHjanc2hDcJQGAbAex9NQCCQyA6CqGMswiaM0lGACSoQDWn6I5A4zNnDiY32aCPbuoujA1rNUIsggqZRrgmGdJAd+qwN2YdDdEiPXUCgy3lGQJ6I8VK1ZoT4cQBjVa2tUAH/uTHwvZbcMWfClBduVK2i9/YB0wgl4MlLHxIAAAAASUVORK5CYII=")
+	bitmaps["questlog"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAACoAAAAnAQAAAABRJucoAAAAAnRSTlMAAHaTzTgAAACASURBVHjajczBCcJAEEbhl42wuSUVmFjJphRL2dLGEuxAxQIiePCw+MswBRgY+OANMxgUoJG1gZj1Bd0lWeIIkKCrgBqjxzcfjxs4/GcKhiBXVyL7M0WEIZiCJVgDoJPPJUGtcV5ksWMHB6jCWQv0dl46ToxqzJZePHnQw9W4/QAf0C04CGYsYgAAAABJRU5ErkJggg==")
+	bitmaps["beemenu"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAACsAAAAsAQAAAADUI3zVAAAAAnRSTlMAAHaTzTgAAACaSURBVHjadc5BDgIhDAXQT9U4y1m6G24inkyO4lGaOUm9AW7MzMY6HyQxJjaBFwotxdW3UAEjNhCc+/1z+mXGmgCH22Ti/S5bIRoXSMgtmTASBeOFsx6td/lDIgGIJ8Czl6kVRAguGL4mW9NcC8zJUjRvlCXXZH3kxiUYW+sBgewhRPq3exIwEOhYiZHl/nS3HdIBePQBlfvtDUnsNfflK46tAAAAAElFTkSuQmCC")
+	bitmaps["item"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAAMAAAAUAQMAAAByNRXfAAAAA1BMVEXU3dp/aiCuAAAAC0lEQVR42mMgEgAAACgAAU1752oAAAAASUVORK5CYII=")
+	bitmaps["bitterberry"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAG8AAAAbCAMAAABFqCGFAAAB11BMVEUbKjUcKzYdLDceLDceLTgfLjkgLzohMDoiMDsjMTwkMj0kMz0lND4mND8oNkApN0EqOEMrOUMsOkQtO0UuPEYvPUcwPkgyQEkzQUo0QUs1Q0w3RU44RU85Rk86SFE8SVM9SlM+S1Q/TFVATVZCT1hDUFlEUVlFUVpGU1xHVFxJVV5KVl9LV19NWWJPW2NRXWVSXmZUYGhVYWhWYWlXYmpXY2tbZm5cZ29daG9eanFibXRibnVkb3ZlcHdoc3ptd35ueX9veoBweoFzfYN0foR1f4V2gIZ4god6hIp7hYt+h41/iY6Aio+FjpSGj5SHkJWKk5iLlJmMlZqNlpqOl5uQmJ2QmZ2Rmp6Sm5+UnKCVnaGZoaWbo6ecpKigp6uhqKyjq66mrbCnrrGnr7Kor7OrsrWss7avtrmwt7myuLu2vL+4v8G5wMK6wMO8wsS+xMa/xcfAxsjBx8nDyMrEyszGzM3HzM7Izc/Jzs/Jz9DK0NHN0tPP1NXQ1dbR1tfS19jV2drX3NzY3N3Z3d7b4ODc4OHe4uLf4+Pg5OTg5eXi5ubj5+fm6urn6+vo7Ovp7ezq7e3r7u7r7+7s8O/t8fDu8fHv8vHw8/Lx9PPx9fTy9fTz9vX09/ZX5XClAAACKElEQVR42u3W61NMYQDH8W9iu7uEhAhJURIphYRci0QiFXKJXAttQnIPXdVWK/3+WHvK6dnZfaY3O443fm9+L34zz2fmzDPnHORt+O/9BS8HJ6mlL2Xys6XJlCVTLbUxepDQJaln9b5ZSXs4J7dsKeZIzB45kvzpRY6XHYLcsiU/Ju+YpOHD8NEdPPDUD8+kL52dwcW9K2kF3cazzqYX8d5Ar9QMQ7qMk/o/JU3WZfnWnx2RVEpWPLSFvJ1FKekVvZIss9v10C9JfXAy0hsswTdu937tx0nepHMgkDCifHPFLLPbn5dQI0k18NpyX05r3ot8nq2sejz+dCVNcwfeDAwq5CW1TzzPZLttNl3CmqA0k0G+or3kd7J7uTRIqqNw7oFJcrwKSbfhvWU2fRfuSw+h1eKxdsjqBeKYT6pz0G4Z7yt0WGbTkys4IFWSPKpwr1rSjzPQbPW+4SYY4U1Dm3V2WyeIHxhOpEpRnoJJnLJ6E3BJ84nwQlS7bTaeHxquwwuLN5XIeRmvVgu1iTJJ09FeB7wys83TNjYXslXR3mg1+Be8XeTe8bt1gbgbga6Msu5wL+lWoG8L62ZkZpt3FeCa/f15VAteLfDJrYkdOFn+NtybS9w9ycw27/tS8A1ZvGXZjTPGGzuYvNfUaM0GX2bVB5mDqgoOFaWkFT+SrLPxVA6VXn5vG+GJl14eG2c99Hrgojz0jhM/4KE3lkK5PPRa4cG/+x/8DdlCsT+3EwaSAAAAAElFTkSuQmCC")
+	bitmaps["feed"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAADwAAAAUAQMAAADrzcxqAAAABlBMVEUAAAD3//lCqWtQAAAAAXRSTlMAQObYZgAAAE1JREFUeNqNzbENwCAMRNHfpYxLSo/ACB4pG8SjMkImIAiwRIe46lX3+QtzAcE5wQ1cHeKQHhw10EwFwISK6YAvvCVg7LBamuM5fRGFBk/MFx8u1mbtAAAAAElFTkSuQmCC")
+	bitmaps["greensuccess"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAA4AAAALCAYAAABPhbxiAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAhdEVYdENyZWF0aW9uIFRpbWUAMjAyMzowMzowOCAxNToyMzo1N/c+ABwAAAAdSURBVChTY3T+H/6fgQzABKVJBqMa8YDhr5GBAQBwxAKu5PiUjAAAAA5lWElmTU0AKgAAAAgAAAAAAAAA0lOTAAAAAElFTkSuQmCC")
+	#Include "%A_ScriptDir%\nm_image_assets\offset\bitmaps.ahk"
+	#Include "%A_ScriptDir%\nm_image_assets\inventory\bitmaps.ahk"
+	mutationsArr := [
+		{name:"AbilityPct", label:"% Ability Rate", baseName:"Ability", triggers:["rate", "abil", "ity"], rangeMin:1, rangeMax:5, unit:"%"},
+		{name:"GatherPct", label:"% Gather Amount", baseName:"Gather", triggers:["gath", "heram"], rangeMin:10, rangeMax:30, unit:"%"},
+		{name:"GatherFlat", label:"+ Gather Amount", baseName:"Gather", triggers:["gath", "heram"], rangeMin:2, rangeMax:10, unit:""},
+		{name:"ConvertPct", label:"% Convert Amount", baseName:"Convert", triggers:["convert", "vertam"], rangeMin:10, rangeMax:30, unit:"%"},
+		{name:"ConvertFlat", label:"+ Convert Amount", baseName:"Convert", triggers:["convert", "vertam"], rangeMin:20, rangeMax:80, unit:""},
+		{name:"InstantPct", label:"+ Instant Conversion", baseName:"Instant", triggers:["inst", "antconv"], rangeMin:8, rangeMax:20, unit:"%"},
+		{name:"CritPct", label:"+ Critical Chance", baseName:"Crit", triggers:["crit", "chance"], rangeMin:1, rangeMax:3, unit:"%"},
+		{name:"AttackPct", label:"% Attack", baseName:"Attack", triggers:["attack", "att", "ack"], rangeMin:5, rangeMax:20, unit:"%"},
+		{name:"AttackFlat", label:"+ Attack", baseName:"Attack", triggers:["attack", "att", "ack"], rangeMin:1, rangeMax:2, unit:""},
+		{name:"EnergyPct", label:"% Energy", baseName:"Energy", triggers:["energy", "rgy"], rangeMin:10, rangeMax:40, unit:"%"},
+		{name:"MovespeedFlat", label:"+ Movement Speed", baseName:"Movespeed", triggers:["movespeed", "speed", "move"], rangeMin:2, rangeMax:6, unit:""}
+	]
+
+	if (MsgBox("BITTERBERRY AUTO FEEDER v0.2 by anniespony#8135``nMake sure BEE SLOT TO MUTATE is always visible``nDO NOT MOVE THE SCREEN OR RESIZE WINDOW FROM NOW ON.``nMAKE SURE BEE IS RADIOACTIVE AT ALL TIMES!", "Bitterberry Auto-Feeder v0.2", 0x40001) = "Cancel")
+		ExitApp
+
+	bitterberrynos := InputBox("Enter the amount of bitterberry used each time", "How many bitterberry?", "w320 h180 T60").Value
+	if IsInteger(bitterberrynos) {
+		if (bitterberrynos > 30)
+			if (MsgBox("You have entered " bitterberrynos " which is more than 30.``nAre you sure?", "Bitterberry Auto-Feeder v0.2", 0x40034) = "No")
+				ExitApp
+	} else {
+		MsgBox "You must enter a number for Bitterberries!!``nStopping Feeder!", "Bitterberry Auto-Feeder v0.2", 0x40010
+		ExitApp
+	}
+
+	if (MsgBox("After dismissing this message,``nleft click ONLY once on BEE SLOT", "Bitterberry Auto-Feeder v0.2", 0x40001) = "Cancel")
+		ExitApp
+
+	hwnd := GetRobloxHWND()
+	ActivateRoblox()
+	GetRobloxClientPos(hwnd)
+	offsetY := GetYOffset(hwnd, &offsetfail)
+	if (offsetfail = 1) {
+		MsgBox "Unable to detect in-game GUI offset!``nStopping Feeder!``n``nThere are a few reasons why this can happen, including:``n - Incorrect graphics settings``n - Your `'Experience Language`' is not set to English``n - Something is covering the top of your Roblox window``n``nJoin our Discord server for support and our Knowledge Base post on this topic (Unable to detect in-game GUI offset)!", "WARNING!!", "0x40030"
+		ExitApp
+	}
+	selectedMutations := []
+	if FileExist(".\settings\mutations.ini") && IniRead(".\settings\mutations.ini", "mutations", "Mutations", 0) {
+		for _, mutation in mutationsArr {
+			if !IniRead(".\settings\mutations.ini", "mutations", mutation.name, 0)
+				continue
+			minValue := ""
+			thresholdRaw := IniRead(".\settings\mutations.ini", "mutationThresholds", mutation.name "Min", "")
+			if RegExMatch(thresholdRaw, "[-+]?\d+(?:\.\d+)?", &thresholdMatch)
+				minValue := thresholdMatch[0] + 0
+			selectedMutations.Push({
+				name: mutation.name,
+				label: mutation.label,
+				baseName: mutation.baseName,
+				triggers: mutation.triggers,
+				rangeMin: mutation.rangeMin,
+				rangeMax: mutation.rangeMax,
+				unit: mutation.unit,
+				minValue: minValue
+			})
+		}
+	}
+	ocr_enabled := selectedMutations.Length > 0
+	ocr_language := ""
+	mutationLogPath := ".\settings\mutation_ocr_log.csv"
+	if ocr_enabled {
+		for k,v in Map("Windows.Globalization.Language","{9B0252AC-0C27-44F8-B792-9793FB66C63E}", "Windows.Graphics.Imaging.BitmapDecoder","{438CCB26-BCEF-4E95-BAD6-23A822E58D01}", "Windows.Media.Ocr.OcrEngine","{5BFFA85A-3384-3540-9940-699120D428A8}") {
+			CreateHString(k, &hString)
+			GUID := Buffer(16), DllCall("ole32\CLSIDFromString", "WStr", v, "Ptr", GUID)
+			result := DllCall("Combase.dll\RoGetActivationFactory", "Ptr", hString, "Ptr", GUID, "PtrP", &pClass:=0)
+			DeleteHString(hString)
+			if (result != 0) {
+				ocr_enabled := 0
+				break
+			}
+		}
+		if !ocr_enabled {
+			MsgBox "OCR is disabled. Bitterberry Auto-Feeder will fall back to the normal keep prompt without mutation filtering.", "Bitterberry Auto-Feeder v0.2", 0x40030
+		} else {
+			list := ocr("ShowAvailableLanguages")
+			lang := "en-"
+			Loop Parse list, "``n", "``r" {
+				if (InStr(A_LoopField, lang) = 1) {
+					ocr_language := A_LoopField
+					break
+				}
+			}
+			if (ocr_language = "")
+				ocr_language := SubStr(list, 1, Max(InStr(list, "``n")-1, 0))
+			if (ocr_language = "") {
+				ocr_enabled := 0
+				MsgBox "No OCR supporting languages are installed on this system. Bitterberry Auto-Feeder will fall back to the normal keep prompt without mutation filtering.", "Bitterberry Auto-Feeder v0.2", 0x40030
+			}
+		}
+	}
+
+	StatusBar := Gui("-Caption +E0x80000 +AlwaysOnTop +ToolWindow -DPIScale")
+	StatusBar.Show("NA")
+	hbm := CreateDIBSection(windowWidth, windowHeight), hdc := CreateCompatibleDC(), obm := SelectObject(hdc, hbm)
+	G := Gdip_GraphicsFromHDC(hdc), Gdip_SetSmoothingMode(G, 2), Gdip_SetInterpolationMode(G, 2)
+	Gdip_FillRectangle(G, pBrush := Gdip_BrushCreateSolid(0x60000000), -1, -1, windowWidth+1, windowHeight+1), Gdip_DeleteBrush(pBrush)
+	UpdateLayeredWindow(StatusBar.Hwnd, hdc, windowX, windowY, windowWidth, windowHeight)
+
+	KeyWait "LButton", "D" ; Wait for the left mouse button to be pressed down.
+	MouseGetPos &beeX, &beeY
+	SaveNeonBeeTarget(beeX, beeY, hwnd)
+	Gdip_GraphicsClear(G), Gdip_FillRectangle(G, pBrush := Gdip_BrushCreateSolid(0xd0000000), -1, -1, windowWidth+1, 38), Gdip_DeleteBrush(pBrush)
+	Gdip_TextToGraphics(G, "Mutating... Right Click or Shift to Stop!", "x0 y0 cffff5f1f Bold Center vCenter s24", "Tahoma", windowWidth, 38)
+	UpdateLayeredWindow(StatusBar.Hwnd, hdc, windowX, windowY, windowWidth, 38)
+	SelectObject(hdc, obm), DeleteObject(hbm), DeleteDC(hdc), Gdip_DeleteGraphics(G)
+	try
+	{
+		Hotkey "Shift", ExitFunc, "On"
+		Hotkey "RButton", ExitFunc, "On"
+		Hotkey "F11", ExitFunc, "On"
+	}
+	Sleep 250
+	if !AutoNeonBee(hwnd, offsetY, beeX, beeY, 1)
+		ExitApp
+
+	Loop
+	{
+		if !AutoNeonBee(hwnd, offsetY, beeX, beeY)
+			break
+		if ((pos := nm_InventorySearch("bitterberry", "down", , , , (A_Index = 1) ? 40 : 4)) = 0)
+		{
+			MsgBox "You ran out of Bitterberries!", "Bitterberry Auto-Feeder v0.2", 0x40010
+			break
+		}
+		GetRobloxClientPos(hwnd)
+
+		SendEvent "{Click " windowX+pos[1] " " windowY+pos[2] " 0}"
+		Send "{Click Down}"
+		Sleep 100
+		SendEvent "{Click " beeX " " beeY " 0}"
+		Sleep 100
+		Send "{Click Up}"
+		Loop 10
+		{
+			Sleep 100
+			pBMScreen := Gdip_BitmapFromScreen(windowX+(54*windowWidth)//100-300 "|" windowY+offsetY+(46*windowHeight)//100-59 "|250|100")
+			if (Gdip_ImageSearch(pBMScreen, bitmaps["feed"], &pos, , , , , 2, , 2) = 1)
+			{
+				Gdip_DisposeImage(pBMScreen)
+				SendEvent "{Click " windowX+(54*windowWidth)//100-300+SubStr(pos, 1, InStr(pos, ",")-1)+140 " " windowY+offsetY+(46*windowHeight)//100-59+SubStr(pos, InStr(pos, ",")+1)+5 "}" ; Click Number
+				Sleep 100
+				Loop StrLen(bitterberrynos)
+				{
+					SendEvent "{Text}" SubStr(bitterberrynos, A_Index, 1)
+					Sleep 100
+				}
+				SendEvent "{Click " windowX+(54*windowWidth)//100-300+SubStr(pos, 1, InStr(pos, ",")-1) " " windowY+offsetY+(46*windowHeight)//100-59+SubStr(pos, InStr(pos, ",")+1) "}" ; Click Feed
+				break
+			}
+			Gdip_DisposeImage(pBMScreen)
+			if (A_Index = 10)
+				continue 2
+		}
+		Sleep 750
+
+	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-295 "|" windowY+offsetY+((4*windowHeight)//10 - 15) "|150|50")
+	if (Gdip_ImageSearch(pBMScreen, bitmaps["greensuccess"], , , , , , 20) = 1) {
+		matchedMutation := 0
+		if (ocr_enabled && selectedMutations.Length)
+			matchedMutation := DetectSelectedMutation(selectedMutations, ocr_language)
+		if (!ocr_enabled || !selectedMutations.Length || matchedMutation) {
+			missingValue := 0
+			if IsObject(matchedMutation)
+				try missingValue := matchedMutation.missingValue
+			if (matchedMutation && missingValue) {
+				if PromptUnreadableMutation(matchedMutation.mutationDef, matchedMutation.ocrText, matchedMutation.valueInfo, "Bitterberry Auto-Feeder v0.2") {
+					Gdip_DisposeImage(pBMScreen)
+					break
+				}
+				CloseBeeWindow()
+				Gdip_DisposeImage(pBMScreen)
+				continue
+			}
+			keepMsg := "SUCCESS!!!!"
+			if matchedMutation {
+				keepMsg .= "``nDetected Mutation: " matchedMutation.name
+				displayValue := ""
+				try displayValue := matchedMutation.display
+				if (displayValue = "")
+					try displayValue := matchedMutation.value
+				if (displayValue != "")
+					keepMsg .= " (" displayValue ")"
+			}
+			keepMsg .= "``nKeep this?"
+			detectedText := matchedMutation ? ("Matched Selected Mutation``nMutation: " matchedMutation.name . (displayValue != "" ? " (" displayValue ")" : "")) : "Matched Selected Mutation"
+			BitterberrySetStatus("Detected", detectedText)
+			if (MsgBox(keepMsg, "Bitterberry Auto-Feeder v0.2", 0x40024) = "Yes")
+			{
+					Gdip_DisposeImage(pBMScreen)
+					break
+				}
+				else
+				{
+					CloseBeeWindow()
+				}
+			} else {
+				CloseBeeWindow()
+			}
+		}
+		Gdip_DisposeImage(pBMScreen)
+	}
+	ExitApp
+
+	CloseBeeWindow() {
+		global windowX, windowY, windowWidth, offsetY
+		ActivateRoblox()
+		SendEvent "{Click " windowX + (windowWidth//2 - 132) " " windowY + offsetY + ((4*windowHeight)//10 - 150) "}" ; Close Bee
+	}
+	SaveNeonBeeTarget(screenX, screenY, hwndRoblox := 0) {
+		global windowX, windowY
+		if !hwndRoblox
+			hwndRoblox := GetRobloxHWND()
+		if !hwndRoblox
+			return 0
+		GetRobloxClientPos(hwndRoblox)
+		relX := Round(screenX - windowX)
+		relY := Round(screenY - windowY)
+		IniWrite(relX, ".\settings\mutations.ini", "neon", "beeX")
+		IniWrite(relY, ".\settings\mutations.ini", "neon", "beeY")
+		IniWrite(0, ".\settings\mutations.ini", "neon", "lastFed")
+		IniWrite(0, ".\settings\mutations.ini", "neon", "expiresAt")
+		return 1
+	}
+	AutoNeonBee(hwndRoblox, offsetY, beeX, beeY, force := 0) {
+		static neonExpiresAt := 0
+		global windowX, windowY, windowWidth, windowHeight
+		if !force {
+			expiresAt := Max(neonExpiresAt, IniRead(".\settings\mutations.ini", "neon", "expiresAt", 0) + 0)
+			if (expiresAt && nowUnix() < expiresAt)
+				return 1
+		}
+		if ((pos := nm_InventorySearch("neonberry", "down", , , , 40)) = 0) {
+			MsgBox "You ran out of Neonberries!", "Bitterberry Auto-Feeder v0.2", 0x40010
+			return 0
+		}
+		ActivateRoblox()
+		GetRobloxClientPos(hwndRoblox)
+		SendEvent "{Click " windowX+pos[1] " " windowY+pos[2] " 0}"
+		Send "{Click Down}"
+		Sleep 100
+		SendEvent "{Click " beeX " " beeY " 0}"
+		Sleep 100
+		Send "{Click Up}"
+		Loop 10 {
+			Sleep 100
+			pBMScreen := Gdip_BitmapFromScreen(windowX+(54*windowWidth)//100-300 "|" windowY+offsetY+(46*windowHeight)//100-59 "|250|100")
+			if (Gdip_ImageSearch(pBMScreen, bitmaps["feed"], &feedPos, , , , , 2, , 2) = 1) {
+				Gdip_DisposeImage(pBMScreen)
+				SendEvent "{Click " windowX+(54*windowWidth)//100-300+SubStr(feedPos, 1, InStr(feedPos, ",")-1)+140 " " windowY+offsetY+(46*windowHeight)//100-59+SubStr(feedPos, InStr(feedPos, ",")+1)+5 "}"
+				Sleep 100
+				SendEvent "{Text}1"
+				Sleep 100
+				SendEvent "{Click " windowX+(54*windowWidth)//100-300+SubStr(feedPos, 1, InStr(feedPos, ",")-1) " " windowY+offsetY+(46*windowHeight)//100-59+SubStr(feedPos, InStr(feedPos, ",")+1) "}"
+				fedAt := nowUnix()
+				neonExpiresAt := fedAt + 640
+				IniWrite(fedAt, ".\settings\mutations.ini", "neon", "lastFed")
+				IniWrite(neonExpiresAt, ".\settings\mutations.ini", "neon", "expiresAt")
+				Sleep 750
+				return 1
+			}
+			Gdip_DisposeImage(pBMScreen)
+		}
+		MsgBox "Failed to feed a Neonberry to the selected bee slot.", "Bitterberry Auto-Feeder v0.2", 0x40030
+		return 0
+	}
+
+	DetectSelectedMutation(selectedMutations, ocr_language) {
+		global windowX, windowY, windowWidth, windowHeight, offsetY, mutationLogPath
+		mutationLeft := windowX + Round(0.5 * windowWidth - 320)
+		mutationTop := windowY + offsetY + Round(0.4 * windowHeight + 17)
+		pBitmap := Gdip_BitmapFromScreen(mutationLeft "|" mutationTop "|210|90")
+		pEffect := Gdip_CreateEffect(5, -60, 30)
+		Gdip_BitmapApplyEffect(pBitmap, pEffect)
+		Gdip_DisposeEffect(pEffect)
+		hBitmap := Gdip_CreateHBITMAPFromBitmap(pBitmap)
+		pIRandomAccessStream := HBitmapToRandomAccessStream(hBitmap)
+		rawText := ocr(pIRandomAccessStream, ocr_language)
+		text := NormalizeMutationText(rawText)
+		matchText := BuildMutationMatchText(text)
+		Gdip_DisposeImage(pBitmap)
+		valueInfo := ReadBestMutationValue(mutationLeft, mutationTop, ocr_language, rawText)
+		logDecision := "no_trigger_match"
+		candidateMutation := 0
+		for _, mutation in selectedMutations {
+			triggerMatched := 0
+			for _, trigger in mutation.triggers
+				if InStr(matchText, StrLower(trigger)) {
+					triggerMatched := 1
+					break
+				}
+			if !triggerMatched
+				continue
+			candidateMutation := {
+				name: mutation.label,
+				minValue: mutation.minValue,
+				mutationDef: mutation
+			}
+			if (valueInfo.value = "") {
+				candidateMutation := {
+					name: mutation.label,
+					minValue: mutation.minValue,
+					missingValue: 1,
+					mutationDef: mutation,
+					ocrText: text,
+					valueInfo: valueInfo
+				}
+				logDecision := "missing_value"
+				LogMutationRead("Bitterberry", rawText " | ValueOCR=" valueInfo.raw, text " | ValueText=" valueInfo.cleaned, FormatMutationLogValue(mutation, valueInfo), logDecision, selectedMutations, candidateMutation)
+				return candidateMutation
+			}
+			resolvedValue := ResolveMutationValue(mutation, valueInfo)
+			if !resolvedValue.valid {
+				logDecision := MutationValueAmbiguous(mutation, valueInfo.value) && !valueInfo.hasPercent ? "ambiguous_value" : "out_of_range"
+				continue
+			}
+			if ((mutation.minValue != "") && (resolvedValue.value < mutation.minValue)) {
+				logDecision := "below_threshold"
+				continue
+			}
+			candidateMutation := {
+				name: mutation.label,
+				value: resolvedValue.value,
+				display: resolvedValue.display,
+				minValue: mutation.minValue,
+				raw: text,
+				mutationDef: mutation
+			}
+			logDecision := "matched"
+			LogMutationRead("Bitterberry", rawText " | ValueOCR=" valueInfo.raw, text " | ValueText=" valueInfo.cleaned, FormatMutationLogValue(mutation, valueInfo), logDecision, selectedMutations, candidateMutation)
+			return candidateMutation
+		}
+		logMutation := 0
+		if IsObject(candidateMutation)
+			try logMutation := candidateMutation.mutationDef
+		LogMutationRead("Bitterberry", rawText " | ValueOCR=" valueInfo.raw, text " | ValueText=" valueInfo.cleaned, FormatMutationLogValue(logMutation, valueInfo), logDecision, selectedMutations, candidateMutation)
+		return 0
+	}
+
+	NormalizeMutationText(rawText) {
+		text := RegExReplace(rawText, "i)mutation", " ")
+		text := RegExReplace(text, "[\r\n]+", " ")
+		text := RegExReplace(text, "\s+", " ")
+		return Trim(text)
+	}
+	BuildMutationMatchText(text) {
+		return StrLower(RegExReplace(text, "[^A-Za-z]", ""))
+	}
+	ReadBestMutationValue(mutationLeft, mutationTop, ocr_language, fullText := "") {
+		bestInfo := {raw: "", cleaned: "", value: "", display: "", hasPercent: 0}
+		for _, rect in [[2, 39, 112, 34], [-8, 34, 128, 40], [-14, 30, 146, 46], [0, 36, 120, 38]] {
+			info := ReadMutationValueAt(mutationLeft + rect[1], mutationTop + rect[2], rect[3], rect[4], ocr_language, fullText)
+			if (bestInfo.raw = "" && (info.raw != "" || info.cleaned != ""))
+				bestInfo := info
+			if (info.value != "")
+				return info
+		}
+		Sleep 80
+		for _, rect in [[-8, 34, 128, 40], [-14, 30, 146, 46]] {
+			info := ReadMutationValueAt(mutationLeft + rect[1], mutationTop + rect[2], rect[3], rect[4], ocr_language, fullText)
+			if (bestInfo.raw = "" && (info.raw != "" || info.cleaned != ""))
+				bestInfo := info
+			if (info.value != "")
+				return info
+		}
+		if (fullText != "") {
+			info := ExtractMutationValue(fullText, fullText)
+			if (info.value != "")
+				return info
+			if (bestInfo.raw = "" && (info.raw != "" || info.cleaned != ""))
+				bestInfo := info
+		}
+		return bestInfo
+	}
+	ReadMutationValueAt(left, top, width, height, ocr_language, fullText := "") {
+		valueBitmap := Gdip_BitmapFromScreen(left "|" top "|" width "|" height)
+		valueEffect := Gdip_CreateEffect(5, -60, 30)
+		Gdip_BitmapApplyEffect(valueBitmap, valueEffect)
+		Gdip_DisposeEffect(valueEffect)
+		valueHBitmap := Gdip_CreateHBITMAPFromBitmap(valueBitmap)
+		valueStream := HBitmapToRandomAccessStream(valueHBitmap)
+		valueRawText := ocr(valueStream, ocr_language)
+		Gdip_DisposeImage(valueBitmap)
+		return ExtractMutationValue(valueRawText, fullText)
+	}
+	ExtractMutationValue(rawText, fullText := "") {
+		valueText := Trim(rawText)
+		valueText := RegExReplace(valueText, "[^\d\+\-\.\%]", "")
+		valueText := RegExReplace(valueText, "\s+")
+		value := ""
+		display := ""
+		if (!RegExMatch(valueText, "[\+\-]?\d+(?:\.\d+)?", &valueMatch) && fullText != "") {
+			fallbackText := RegExReplace(fullText, "[^\d\+\-\.\%]", "")
+			fallbackText := RegExReplace(fallbackText, "\s+")
+			if RegExMatch(fallbackText, "[\+\-]?\d+(?:\.\d+)?", &valueMatch)
+				valueText := fallbackText
+		}
+		if RegExMatch(valueText, "[\+\-]?\d+(?:\.\d+)?", &valueMatch) {
+			display := valueMatch[0]
+			value := valueMatch[0] + 0
+			if (SubStr(display, 1, 1) != "+" && SubStr(display, 1, 1) != "-")
+				display := "+" display
+			if (InStr(valueText, "%") || InStr(fullText, "%"))
+				display .= "%"
+		}
+		return {
+			raw: rawText,
+			cleaned: valueText,
+			value: value,
+			display: display,
+			hasPercent: (InStr(valueText, "%") || InStr(fullText, "%")) ? 1 : 0
+		}
+	}
+	FormatMutationLogValue(mutation, valueInfo) {
+		if !IsObject(mutation) {
+			if IsObject(valueInfo)
+				try return valueInfo.cleaned
+			return ""
+		}
+		display := FormatMutationValueDisplay(mutation, valueInfo)
+		if (display != "")
+			return display
+		if IsObject(valueInfo)
+			try return valueInfo.cleaned
+		return ""
+	}
+	FormatMutationValueDisplay(mutation, valueInfo) {
+		resolvedValue := ResolveMutationValue(mutation, valueInfo)
+		return resolvedValue.valid ? resolvedValue.display : ""
+	}
+	ResolveMutationValue(mutation, valueInfo) {
+		value := ""
+		display := ""
+		hasPercent := 0
+		if IsObject(valueInfo) {
+			try value := valueInfo.value
+			try display := valueInfo.display
+			try hasPercent := valueInfo.hasPercent
+		}
+		if (value = "")
+			return {valid: 0, value: "", display: ""}
+		if (display = "")
+			display := "" value
+		if (SubStr(display, 1, 1) != "+" && SubStr(display, 1, 1) != "-")
+			display := "+" display
+		if !IsObject(mutation)
+			return {valid: 1, value: value, display: display}
+		if (value < mutation.rangeMin || value > mutation.rangeMax)
+			return {valid: 0, value: value, display: ""}
+		ambiguous := MutationValueAmbiguous(mutation, value)
+		if (hasPercent && mutation.unit != "%")
+			return {valid: 0, value: value, display: ""}
+		if (!hasPercent && ambiguous)
+			return {valid: 0, value: value, display: ""}
+		if (mutation.unit = "%" && !InStr(display, "%"))
+			display .= "%"
+		if (mutation.unit = "" && InStr(display, "%"))
+			display := StrReplace(display, "%")
+		return {valid: 1, value: value, display: display}
+	}
+	MutationValueAmbiguous(mutation, value) {
+		if !IsObject(mutation)
+			return 0
+		switch mutation.name {
+			case "GatherPct", "GatherFlat":
+				return (value = 10)
+			case "ConvertPct", "ConvertFlat":
+				return (value >= 20 && value <= 30)
+		}
+		return 0
+	}
+	DescribeMutationForPrompt(mutation) {
+		if IsObject(mutation) {
+			try return mutation.baseName
+			try return mutation.label
+		}
+		return ""
+	}
+	BitterberrySetStatus(newState, details) {
+		statusText := "[" A_MM "/" A_DD "][" A_Hour ":" A_Min ":" A_Sec "] " newState ": Bitterberry Auto-Feeder" . Chr(10) . details
+		DetectHiddenWindows 1
+		if WinExist("Status.ahk ahk_class AutoHotkey")
+			try SendMessage 0xC2, 0, StrPtr(statusText)
+		DetectHiddenWindows 0
+	}
+	PromptUnreadableMutation(mutation, normalizedText, valueInfo, title) {
+		mutationName := DescribeMutationForPrompt(mutation)
+		valueRawText := ""
+		if IsObject(valueInfo)
+			try valueRawText := NormalizeMutationText(valueInfo.raw)
+		notify := "Unreadable Mutation Value"
+		if (mutationName != "")
+			notify .= "``nMutation: " mutationName
+		if (normalizedText != "")
+			notify .= "``nMutation OCR: " normalizedText
+		if (valueRawText != "")
+			notify .= "``nValue OCR: " valueRawText
+		BitterberrySetStatus("Warning", notify)
+		msg := "Detected selected mutation type: " mutationName ".``nThe value could not be read after OCR retries.``nKeep this?"
+		if (normalizedText != "")
+			msg .= "``n``nMutation OCR: " normalizedText
+		if (valueRawText != "")
+			msg .= "``nValue OCR: " valueRawText
+		return (MsgBox(msg, title, 0x40024) = "Yes")
+	}
+
+	LogMutationRead(source, rawText, normalizedText, parsedValue, decision, selectedMutations, candidateMutation := 0) {
+		global mutationLogPath
+		newline := Chr(13) . Chr(10)
+		if !DirExist(".\settings")
+			DirCreate(".\settings")
+		if !FileExist(mutationLogPath) {
+			header := "Timestamp,Source,RawOCR,NormalizedText,ParsedValue,Decision,"
+				. "CandidateMutation,MinValue,SelectedFilters"
+			FileAppend(header . newline, mutationLogPath, "UTF-8")
+		}
+		candidateName := ""
+		minValue := ""
+		if IsObject(candidateMutation) {
+			try candidateName := candidateMutation.name
+			try minValue := candidateMutation.minValue
+		}
+		line := LogSanitize(FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")) ","
+			. LogSanitize(source) ","
+			. LogSanitize(rawText) ","
+			. LogSanitize(normalizedText) ","
+			. LogSanitize(parsedValue) ","
+			. LogSanitize(decision) ","
+			. LogSanitize(candidateName) ","
+			. LogSanitize(minValue) ","
+			. LogSanitize(FormatMutationFilters(selectedMutations))
+		FileAppend(line . newline, mutationLogPath, "UTF-8")
+	}
+
+	FormatMutationFilters(selectedMutations) {
+		filterText := ""
+		for _, mutation in selectedMutations {
+			if (filterText != "")
+				filterText .= "; "
+			filterText .= mutation.label
+			if (mutation.minValue != "")
+				filterText .= ">=" mutation.minValue
+		}
+		return filterText
+	}
+
+	LogSanitize(value) {
+		cr := Chr(13)
+		lf := Chr(10)
+		value := "" value
+		value := StrReplace(value, cr . lf, " <NL> ")
+		value := StrReplace(value, lf, " <NL> ")
+		value := StrReplace(value, cr, " <NL> ")
+		value := StrReplace(value, ",", ";")
+		return value
+	}
+
+	HBitmapToRandomAccessStream(hBitmap) {
+		static IID_IRandomAccessStream := "{905A0FE1-BC53-11DF-8C49-001E4FC686DA}"
+				, IID_IPicture            := "{7BF80980-BF32-101A-8BBB-00AA00300CAB}"
+				, PICTYPE_BITMAP := 1
+				, BSOS_DEFAULT   := 0
+				, sz := 8 + A_PtrSize * 2
+
+		DllCall("Ole32\CreateStreamOnHGlobal", "Ptr", 0, "UInt", true, "PtrP", &pIStream:=0, "UInt")
+
+		PICTDESC := Buffer(sz, 0)
+		NumPut("uint", sz
+			, "uint", PICTYPE_BITMAP
+			, "ptr", hBitmap, PICTDESC)
+
+		riid := CLSIDFromString(IID_IPicture)
+		DllCall("OleAut32\OleCreatePictureIndirect", "Ptr", PICTDESC, "Ptr", riid, "UInt", false, "PtrP", &pIPicture:=0, "UInt")
+		ComCall(15, pIPicture, "Ptr", pIStream, "UInt", true, "UIntP", &size:=0, "UInt")
+		riid := CLSIDFromString(IID_IRandomAccessStream)
+		DllCall("ShCore\CreateRandomAccessStreamOverStream", "Ptr", pIStream, "UInt", BSOS_DEFAULT, "Ptr", riid, "PtrP", &pIRandomAccessStream:=0, "UInt")
+		ObjRelease(pIPicture)
+		ObjRelease(pIStream)
+		Return pIRandomAccessStream
+	}
+
+	CLSIDFromString(IID, &CLSID?) {
+		CLSID := Buffer(16)
+		if res := DllCall("ole32\CLSIDFromString", "WStr", IID, "Ptr", CLSID, "UInt")
+			throw Error("CLSIDFromString failed. Error: " . Format("{:#x}", res))
+		Return CLSID
+	}
+
+	ocr(file, lang := "FirstFromAvailableLanguages")
+	{
+		static OcrEngineStatics, OcrEngine, MaxDimension, LanguageFactory, Language, CurrentLanguage:="", BitmapDecoderStatics, GlobalizationPreferencesStatics
+		if !IsSet(OcrEngineStatics)
+		{
+			CreateClass("Windows.Globalization.Language", ILanguageFactory := "{9B0252AC-0C27-44F8-B792-9793FB66C63E}", &LanguageFactory)
+			CreateClass("Windows.Graphics.Imaging.BitmapDecoder", IBitmapDecoderStatics := "{438CCB26-BCEF-4E95-BAD6-23A822E58D01}", &BitmapDecoderStatics)
+			CreateClass("Windows.Media.Ocr.OcrEngine", IOcrEngineStatics := "{5BFFA85A-3384-3540-9940-699120D428A8}", &OcrEngineStatics)
+			ComCall(6, OcrEngineStatics, "uint*", &MaxDimension:=0)
+		}
+		text := ""
+		if (file = "ShowAvailableLanguages")
+		{
+			if !IsSet(GlobalizationPreferencesStatics)
+				CreateClass("Windows.System.UserProfile.GlobalizationPreferences", IGlobalizationPreferencesStatics := "{01BF4326-ED37-4E96-B0E9-C1340D1EA158}", &GlobalizationPreferencesStatics)
+			ComCall(9, GlobalizationPreferencesStatics, "ptr*", &LanguageList:=0)
+			ComCall(7, LanguageList, "int*", &count:=0)
+			loop count
+			{
+				ComCall(6, LanguageList, "int", A_Index-1, "ptr*", &hString:=0)
+				ComCall(6, LanguageFactory, "ptr", hString, "ptr*", &LanguageTest:=0)
+				ComCall(8, OcrEngineStatics, "ptr", LanguageTest, "int*", &bool:=0)
+				if (bool = 1)
+				{
+					ComCall(6, LanguageTest, "ptr*", &hText:=0)
+					b := DllCall("Combase.dll\WindowsGetStringRawBuffer", "ptr", hText, "uint*", &length:=0, "ptr")
+					text .= StrGet(b, "UTF-16") "``n"
+				}
+				ObjRelease(LanguageTest)
+			}
+			ObjRelease(LanguageList)
+			return text
+		}
+		if (lang != CurrentLanguage) or (lang = "FirstFromAvailableLanguages")
+		{
+			if IsSet(OcrEngine)
+			{
+				ObjRelease(OcrEngine)
+				if (CurrentLanguage != "FirstFromAvailableLanguages")
+					ObjRelease(Language)
+			}
+			if (lang = "FirstFromAvailableLanguages")
+				ComCall(10, OcrEngineStatics, "ptr*", &OcrEngine:=0)
+			else
+			{
+				CreateHString(lang, &hString)
+				ComCall(6, LanguageFactory, "ptr", hString, "ptr*", &Language:=0)
+				DeleteHString(hString)
+				ComCall(9, OcrEngineStatics, "ptr", Language, "ptr*", &OcrEngine:=0)
+			}
+			if (OcrEngine = 0)
+			{
+				msgbox "Can not use OCR language " lang ". Please install the language pack."
+				ExitApp
+			}
+			CurrentLanguage := lang
+		}
+		IRandomAccessStream := file
+		ComCall(14, BitmapDecoderStatics, "ptr", IRandomAccessStream, "ptr*", &BitmapDecoder:=0)
+		WaitForAsync(&BitmapDecoder)
+		BitmapFrame := ComObjQuery(BitmapDecoder, IBitmapFrame := "{72A49A1C-8081-438D-91BC-94ECFC8185C6}")
+		ComCall(12, BitmapFrame, "uint*", &width:=0)
+		ComCall(13, BitmapFrame, "uint*", &height:=0)
+		if (width > MaxDimension) or (height > MaxDimension)
+		{
+			msgbox "Image is to big - " width "x" height ".``nIt should be maximum - " MaxDimension " pixels"
+			ExitApp
+		}
+		BitmapFrameWithSoftwareBitmap := ComObjQuery(BitmapDecoder, IBitmapFrameWithSoftwareBitmap := "{FE287C9A-420C-4963-87AD-691436E08383}")
+		ComCall(6, BitmapFrameWithSoftwareBitmap, "ptr*", &SoftwareBitmap:=0)
+		WaitForAsync(&SoftwareBitmap)
+		ComCall(6, OcrEngine, "ptr", SoftwareBitmap, "ptr*", &OcrResult:=0)
+		WaitForAsync(&OcrResult)
+		ComCall(6, OcrResult, "ptr*", &LinesList:=0)
+		ComCall(7, LinesList, "int*", &count:=0)
+		loop count
+		{
+			ComCall(6, LinesList, "int", A_Index-1, "ptr*", &OcrLine:=0)
+			ComCall(7, OcrLine, "ptr*", &hText:=0)
+			buf := DllCall("Combase.dll\WindowsGetStringRawBuffer", "ptr", hText, "uint*", &length:=0, "ptr")
+			text .= StrGet(buf, "UTF-16") "``n"
+			ObjRelease(OcrLine)
+		}
+		Close := ComObjQuery(IRandomAccessStream, IClosable := "{30D5A829-7FA4-4026-83BB-D75BAE4EA99E}")
+		ComCall(6, Close)
+		Close := ComObjQuery(SoftwareBitmap, IClosable := "{30D5A829-7FA4-4026-83BB-D75BAE4EA99E}")
+		ComCall(6, Close)
+		ObjRelease(IRandomAccessStream)
+		ObjRelease(BitmapDecoder)
+		ObjRelease(SoftwareBitmap)
+		ObjRelease(OcrResult)
+		ObjRelease(LinesList)
+		return text
+	}
+
+	CreateClass(str, interface, &Class)
+	{
+		CreateHString(str, &hString)
+		GUID := CLSIDFromString(interface)
+		result := DllCall("Combase.dll\RoGetActivationFactory", "ptr", hString, "ptr", GUID, "ptr*", &Class:=0)
+		if (result != 0)
+		{
+			if (result = 0x80004002)
+				msgbox "No such interface supported"
+			else if (result = 0x80040154)
+				msgbox "Class not registered"
+			else
+				msgbox "error: " result
+		}
+		DeleteHString(hString)
+	}
+
+	CreateHString(str, &hString)
+	{
+		DllCall("Combase.dll\WindowsCreateString", "wstr", str, "uint", StrLen(str), "ptr*", &hString:=0)
+	}
+
+	DeleteHString(hString)
+	{
+		DllCall("Combase.dll\WindowsDeleteString", "ptr", hString)
+	}
+
+	WaitForAsync(&Object)
+	{
+		AsyncInfo := ComObjQuery(Object, IAsyncInfo := "{00000036-0000-0000-C000-000000000046}")
+		loop
+		{
+			ComCall(7, AsyncInfo, "uint*", &status:=0)   ; IAsyncInfo.Status
+			if (status != 0)
+			{
+				if (status != 1)
+				{
+					ComCall(8, AsyncInfo, "uint*", &ErrorCode:=0)   ; IAsyncInfo.ErrorCode
+					msgbox "AsyncInfo status error: " ErrorCode
+					ExitApp
+				}
+				break
+			}
+			sleep 10
+		}
+		ComCall(8, Object, "ptr*", &ObjectResult:=0)   ; GetResults
+		ObjRelease(Object)
+		Object := ObjectResult
+	}
+
+	ExitFunc(*)
+	{
+		try StatusBar.Destroy()
+		try Gdip_Shutdown(pToken)
+		ExitApp
+	}
+	'
+	)
+
+	shell := ComObject("WScript.Shell")
+	exec := shell.Exec('"' exe_path64 '" /script /force *')
+	exec.StdIn.Write(script), exec.StdIn.Close()
+}
