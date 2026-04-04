@@ -244,6 +244,15 @@ tadsync_ShouldInterruptFollowing(currentField) {
 	return false
 }
 
+tadsync_FindHiveSlotCompat(convertAfter := 1, forceBalloonConvert := 0) {
+	; Sticker Stack extends nm_findHiveSlot() with resume parameters.
+	; Call the 2-arg version only when that signature is actually present.
+	findHiveSlot := Func("nm_findHiveSlot")
+	return (findHiveSlot.MaxParams >= 2)
+		? findHiveSlot.Call(convertAfter, forceBalloonConvert)
+		: findHiveSlot.Call()
+}
+
 tadsync_HandleHiveStandby() {
 	global FollowingLeader, FollowingDirective, HiveConfirmed, HiveStandbyStatusShown
 
@@ -257,7 +266,7 @@ tadsync_HandleHiveStandby() {
 		HiveStandbyStatusShown := 0
 		nm_setStatus("Traveling", "TadSync Hive Standby")
 		nm_Reset(2, 2000, 0, 1)
-		nm_findHiveSlot(0, 0)
+		tadsync_FindHiveSlotCompat(0, 0)
 	}
 
 	if !(FollowingLeader = 1 && FollowingDirective = "HiveStandby") {
@@ -285,23 +294,6 @@ aq_announceField(field){
 aq_togglePFieldBoosted(*) {
 	global PFieldBoosted
 	IniWrite (PFieldBoosted := MainGui["PFieldBoosted"].Value), "settings\nm_config.ini", "Extensions", "PFieldBoosted"
-}
-
-aq_StatMonitorThemeEditorGUI(*) {
-	editorPath := A_WorkingDir "\submacros\StatMonitorThemeEditor.ahk"
-	if !FileExist(editorPath) {
-		MsgBox("StatMonitorThemeEditor.ahk was not found in submacros.", "StatMonitor Theme Editor", 0x30)
-		return
-	}
-
-	if WinExist("StatMonitor Theme Editor ahk_class AutoHotkey") {
-		WinActivate()
-		return
-	}
-
-	try Run('"' A_AhkPath '" /script "' editorPath '"', A_WorkingDir)
-	catch as e
-		MsgBox("Failed to open the StatMonitor theme editor.`n`n" e.Message, "StatMonitor Theme Editor", 0x10)
 }
 
 ; ===== FIELD FOLLOWING GUI =====

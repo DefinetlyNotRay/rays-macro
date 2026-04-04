@@ -98,12 +98,58 @@ EnsureIniSectionKey(text, sectionName, keyName, defaultValue, &changed := false)
     return EnsureIniKey(text, sectionName, keyName, defaultValue, &changed)
 }
 
+SetIniSectionKey(text, sectionName, keyName, value, &changed := false) {
+    ; Made by @definetlynotray on discord
+    changed := false
+    sectionHeader := "[" sectionName "]"
+    sectionPos := InStr(text, sectionHeader)
+    if !sectionPos {
+        base := RTrim(text, "`r`n")
+        changed := true
+        return ((base = "") ? "" : base "`r`n`r`n") sectionHeader "`r`n" keyName "=" value "`r`n"
+    }
+
+    nextSectionPos := RegExMatch(text, "m)^\[.+\]$", &sectionMatch, sectionPos + StrLen(sectionHeader)) ? sectionMatch.Pos : 0
+    sectionText := nextSectionPos ? SubStr(text, sectionPos, nextSectionPos - sectionPos) : SubStr(text, sectionPos)
+    linePattern := "m)^" keyName "=[^\r\n]*$"
+    newLine := keyName "=" value
+
+    if RegExMatch(sectionText, linePattern) {
+        updatedSection := RegExReplace(sectionText, linePattern, newLine, &replaceCount, 1)
+        if (updatedSection = sectionText)
+            return text
+        changed := true
+        return nextSectionPos ? (SubStr(text, 1, sectionPos - 1) updatedSection SubStr(text, nextSectionPos)) : (SubStr(text, 1, sectionPos - 1) updatedSection)
+    }
+
+    changed := true
+    insertText := newLine "`r`n"
+    if nextSectionPos
+        return SubStr(text, 1, nextSectionPos - 1) insertText SubStr(text, nextSectionPos)
+
+    return RTrim(text, "`r`n") "`r`n" insertText
+}
+
+EnsureConfigMapEntry(text, mapName, keyName, defaultValue, &changed := false) {
+    ; Made by @definetlynotray on discord
+    changed := false
+    mapPattern := '(?s)(config\["' mapName '"\]\s*:=\s*Map\()(.*?)(\))'
+    if !RegExMatch(text, mapPattern, &match)
+        return text
+
+    if InStr(match[2], '"' keyName '"')
+        return text
+
+    changed := true
+    return RegExReplace(text, mapPattern, '$1$2, "' keyName '", ' defaultValue '$3', , 1)
+}
+
 ShowPatchSelectionGui() {
     result := Map()
     selectionGui := Gui("+AlwaysOnTop", "Apply Patch Modules")
     selectionGui.SetFont("s9", "Segoe UI")
     selectionGui.Add("Text", "xm w560", "Select which patch groups to apply.")
-    selectionGui.Add("Text", "xm y+6 w560", "Fresh recommended: TadSync Core, Glitter Extend, Enzyme Balloon Convert, BFB Interrupt, Sticker Stack Interrupt.")
+    selectionGui.Add("Text", "xm y+6 w560", "Fresh recommended: TadSync Core, Glitter Extend, Enzyme Balloon Convert, BFB Interrupt, Sticker Stack Interrupt, Mondo Interrupt.")
     selectionGui.Add("Text", "xm y+4 w560", "Low risk on modified installs: Force Hourly Report, StatMonitor Theme Tools, Auto Jelly, Auto Bitter.")
 
     selectionGui.Add("CheckBox", "xm y+14 vPatchTadSyncCore Checked", "TadSync Core (Fresh recommended)")
@@ -111,6 +157,7 @@ ShowPatchSelectionGui() {
     selectionGui.Add("CheckBox", "xm y+4 vPatchEnzymeBalloon Checked", "Enzyme Balloon Convert (Fresh recommended)")
     selectionGui.Add("CheckBox", "xm y+4 vPatchBfb Checked", "BFB Interrupt (Fresh recommended)")
     selectionGui.Add("CheckBox", "xm y+4 vPatchStickerStack Checked", "Sticker Stack Interrupt (Fresh recommended)")
+    selectionGui.Add("CheckBox", "xm y+4 vPatchMondoInterrupt Checked", "Mondo Interrupt (Fresh recommended)")
     selectionGui.Add("CheckBox", "xm y+4 vPatchForceHourly Checked", "Force Hourly Report (Safe on modified installs)")
     selectionGui.Add("CheckBox", "xm y+4 vPatchStatMonitorTheme Checked", "StatMonitor Theme Tools (Safe on modified installs)")
     selectionGui.Add("CheckBox", "xm y+4 vPatchAutoJelly Checked", "Auto Jelly (Safe on modified installs)")
@@ -141,6 +188,7 @@ ShowPatchSelectionGui() {
         result["PatchMondoHop"] := false
         result["PatchBfb"] := !!saved.PatchBfb
         result["PatchStickerStack"] := !!saved.PatchStickerStack
+        result["PatchMondoInterrupt"] := !!saved.PatchMondoInterrupt
         result["PatchForceHourly"] := !!saved.PatchForceHourly
         result["PatchStatMonitorTheme"] := !!saved.PatchStatMonitorTheme
         result["PatchAutoJelly"] := !!saved.PatchAutoJelly
@@ -202,6 +250,7 @@ patchEnzymeBalloon := selectedModules["PatchEnzymeBalloon"]
 patchMondoHop := selectedModules["PatchMondoHop"]
 patchBfb := selectedModules["PatchBfb"]
 patchStickerStack := selectedModules["PatchStickerStack"]
+patchMondoInterrupt := selectedModules["PatchMondoInterrupt"]
 patchForceHourly := selectedModules["PatchForceHourly"]
 patchStatMonitorTheme := selectedModules["PatchStatMonitorTheme"]
 patchAutoJelly := selectedModules["PatchAutoJelly"]
@@ -227,6 +276,7 @@ msg .= " - Glitter Extend: " (patchGlitterExtend ? "ON" : "OFF") "`n"
 msg .= " - Enzyme Balloon Convert: " (patchEnzymeBalloon ? "ON" : "OFF") "`n"
 msg .= " - BFB Interrupt: " (patchBfb ? "ON" : "OFF") "`n"
 msg .= " - Sticker Stack Interrupt: " (patchStickerStack ? "ON" : "OFF") "`n"
+msg .= " - Mondo Interrupt: " (patchMondoInterrupt ? "ON" : "OFF") "`n"
 msg .= " - Force Hourly Report: " (patchForceHourly ? "ON" : "OFF") "`n"
 msg .= " - StatMonitor Theme Tools: " (patchStatMonitorTheme ? "ON" : "OFF") "`n"
 msg .= " - Auto Jelly: " (patchAutoJelly ? "ON" : "OFF") "`n"
@@ -262,21 +312,6 @@ if FileExist(natroPath) {
         
         ; 1a0. Clean up old submacros/ includes (migrate to Extensions/ path)
         c := RegExReplace(c, 'm)#Include "%A_ScriptDir%\\tadsync_(\w+)\.ahk"', '#Include "%A_ScriptDir%\..\Extensions\tadsync_$1.ahk"')
-
-        ; 1a. Dynamic includes from Extensions/ folder
-        extDir := workDir "\Extensions"
-        if DirExist(extDir) {
-            loop files extDir "\*.ahk" {
-                extFile := A_LoopFileName
-                includeStr := '#Include "%A_ScriptDir%\..\Extensions\' extFile '"`r`n'
-                if !InStr(c, extFile) {
-                    if (pos := InStr(c, "#Warn")) {
-                        c := SubStr(c, 1, pos-1) includeStr SubStr(c, pos)
-                        FileAppend("âœ“ Auto-included Extensions\\" extFile "`n", logFile)
-                    }
-                }
-            }
-        }
 
         ; tadsync_extension.ahk and tadsync_althop_extension.ahk self-initialize.
         ; Do not inject extra init calls into natro_macro.ahk using brittle version anchors.
@@ -473,22 +508,29 @@ if FileExist(natroPath) {
 
 
     ; 1c. Extensions Config
-    if (patchTadSyncCore || patchMondoHop) && !InStr(c, 'config["Extensions"]') {
+    if (patchTadSyncCore || patchMondoHop || patchMondoInterrupt) && !InStr(c, 'config["Extensions"]') {
         if (pos := InStr(c, 'config["Status"] := Map(')) {
             configCode := 'config["Extensions"] := Map("FollowingLeader", 0, "FollowingField", "", "FollowingStartTime", 0, "LastAnnouncedField", "", "FieldFollowingCheck", 0, "FieldFollowingFollowMode", "Follower", "FieldFollowingMaxTime", 900, "FieldFollowingChannelID", "", "PFieldBoosted", 0, "PreGlitterCheck", 0'
             if patchMondoHop
                 configCode .= ', "AltHopMondoEnabled", 0, "AltHopMondoLeadTime", 1.5, "AltHopMondoState", 0, "AltHopMondoLastTime", 0, "MondoHopLootTime", 45'
+            if patchMondoInterrupt
+                configCode .= ', "MondoInterruptCheck", 1'
             configCode .= ')`r`n'
             c := SubStr(c, 1, pos-1) configCode SubStr(c, pos)
             FileAppend("âœ“ Added config['Extensions'] with Mondo settings`n", logFile)
         }
-    } else if patchMondoHop && !InStr(c, '"AltHopMondoEnabled"') {
+    } else if (patchMondoHop && !InStr(c, '"AltHopMondoEnabled"')) || (patchMondoInterrupt && !InStr(c, '"MondoInterruptCheck"')) {
         ; Append our keys to existing map
         pattern := '(config\["Extensions"\]\s*:=\s*Map\(.*?)(\))'
-        c := RegExReplace(c, pattern, '$1, "AltHopMondoEnabled", 0, "AltHopMondoLeadTime", 1.5, "AltHopMondoState", 0, "AltHopMondoLastTime", 0, "MondoHopLootTime", 45$2')
+        appendBits := ''
+        if (patchMondoHop && !InStr(c, '"AltHopMondoEnabled"'))
+            appendBits .= ', "AltHopMondoEnabled", 0, "AltHopMondoLeadTime", 1.5, "AltHopMondoState", 0, "AltHopMondoLastTime", 0, "MondoHopLootTime", 45'
+        if (patchMondoInterrupt && !InStr(c, '"MondoInterruptCheck"'))
+            appendBits .= ', "MondoInterruptCheck", 1'
+        c := RegExReplace(c, pattern, '$1' appendBits '$2')
             FileAppend("âœ“ Appended Mondo settings to existing Extensions map`n", logFile)
     }
-    if (patchTadSyncCore || patchMondoHop) && !InStr(c, '"PreGlitterCheck"') && InStr(c, 'config["Extensions"] := Map(') {
+    if (patchTadSyncCore || patchMondoHop || patchMondoInterrupt) && !InStr(c, '"PreGlitterCheck"') && InStr(c, 'config["Extensions"] := Map(') {
         c := RegExReplace(c, '(config\["Extensions"\]\s*:=\s*Map\(.*?"PFieldBoosted", 0)(.*?\))', '$1, "PreGlitterCheck", 0$2', , 1)
     }
 
@@ -1680,6 +1722,7 @@ if FileExist(natroPath) {
             }
         }
     }
+    }
 
     ; 1g. Extensions tab registration
     if InStr(c, '"TadSync"') {
@@ -1716,7 +1759,7 @@ if FileExist(natroPath) {
     oldEnzymeBoostLine3 := '(GuiCtrl := MainGui.Add("CheckBox", "x205 y206 w85 h32 +Center vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted``nEnzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
     newExtensionsLayout := JoinLines(
         'MainGui.Add("GroupBox", "x5 y23 w165 h80", "Extensions")',
-        'MainGui.Add("GroupBox", "x175 y23 w155 h80", "Interupts")',
+        'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")',
         'MainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")',
         '',
         'MainGui.SetFont("s8 cDefault Norm", "Tahoma")',
@@ -1725,6 +1768,7 @@ if FileExist(natroPath) {
         'MainGui.Add("Button", "x15 y70 w150 h20 vStatMonitorEditorGUI Disabled", "StatMonitor Editor").OnEvent("Click", aq_StatMonitorThemeEditorGUI)',
         'MainGui.Add("CheckBox", "x185 y45 w135 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "Blue Booster Interrupt").OnEvent("Click", nm_BlueBoosterToggle)',
         'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)',
+        '(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck" . (MondoInterruptCheck ? " Checked" : ""), "Mondo Interrupt")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)',
         'MainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)',
         '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)',
         '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)',
@@ -1762,19 +1806,22 @@ if FileExist(natroPath) {
     c := StrReplace(c, oldEnzymeBoostLine1 "`r`n", "")
     c := StrReplace(c, oldEnzymeBoostLine2 "`r`n", "")
     c := StrReplace(c, oldEnzymeBoostLine3 "`r`n", "")
-    c := StrReplace(c, 'MainGui.Add("GroupBox", "x175 y23 w315 h80", "Interupts & Extras")', 'MainGui.Add("GroupBox", "x175 y23 w155 h80", "Interupts")`r`nMainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")')
+    c := StrReplace(c, 'MainGui.Add("GroupBox", "x175 y23 w315 h80", "Interupts & Extras")', 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")`r`nMainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")')
+    c := StrReplace(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h80", "Interupts")', 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")')
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)', 'MainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)')
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x335 y45 w145 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "BFB Interrupt").OnEvent("Click", nm_BlueBoosterToggle)', 'MainGui.Add("CheckBox", "x185 y45 w135 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "BFB Interrupt").OnEvent("Click", nm_BlueBoosterToggle)')
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w145 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)')
+    c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck" . (MondoInterruptCheck ? " Checked" : ""), "Mondo Interrupt")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)')
+    c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck Disabled", "Sticker Stack Interrupt")`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Disabled", "Glitter Extend")', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck Disabled", "Sticker Stack Interrupt")`r`n(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck Disabled", "Mondo Interrupt")).Section := "Extensions"`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Disabled", "Glitter Extend")')
     c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x335 y70 w145 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)')
     c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)')
     c := StrReplace(c, 'MainGui.Add("GroupBox", "x335 y23 w155 h80", "Extras")', 'MainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")')
     c := StrReplace(c, 'MainGui.Add("Text", "x12 y109 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y121 w476 Center c666666", "Inspired by @baspas")', 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")')
-    if !InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h80", "Interupts")') && InStr(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h80", "Extensions")') {
+    if !InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")') && InStr(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h80", "Extensions")') {
         c := StrReplace(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h80", "Extensions")`r`n`r`nMainGui.SetFont("s8 cDefault Norm", "Tahoma")`r`n`r`nMainGui.Add("Button", "x15 y45 w150 h20 vFieldFollowingGUI Disabled", "Field Following").OnEvent("Click", aq_FieldFollowingGUI)', newExtensionsLayout)
         FileAppend("✓ Split Extensions controls into Interupts and Extras sections`n", logFile)
     }
-    if InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h80", "Interupts")') && !InStr(c, 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")') {
+    if InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")') && !InStr(c, 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")') {
         creditsNeedle := '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
         creditsInsert := creditsNeedle '`r`nMainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")'
         if InStr(c, creditsNeedle) {
@@ -1836,6 +1883,310 @@ if FileExist(natroPath) {
         c .= '`r`nnm_TadsyncInterrupt() => tadsync_ShouldInterruptFollowing(FieldName)`r`n'
         FileAppend("âœ“ Added nm_TadsyncInterrupt function`n", logFile)
     }
+
+    ; 1a0b. Include extension handlers required by selected modules.
+    if patchTadSyncCore {
+        extDir := workDir "\Extensions"
+        if DirExist(extDir) {
+            loop files extDir "\*.ahk" {
+                extFile := A_LoopFileName
+                shouldInclude := (extFile != "statmonitor_theme_extension.ahk")
+                if !shouldInclude
+                    continue
+
+                includeStr := '#Include "%A_ScriptDir%\..\Extensions\' extFile '"`r`n'
+                if !InStr(c, extFile) {
+                    if (pos := InStr(c, "#Warn")) {
+                        c := SubStr(c, 1, pos-1) includeStr SubStr(c, pos)
+                        FileAppend("✓ Auto-included Extensions\\" extFile "`n", logFile)
+                    }
+                }
+            }
+        }
+    }
+    if patchStatMonitorTheme {
+        statMonitorInclude := '#Include "%A_ScriptDir%\..\Extensions\statmonitor_theme_extension.ahk"`r`n'
+        if !InStr(c, 'statmonitor_theme_extension.ahk') {
+            if (pos := InStr(c, "#Warn")) {
+                c := SubStr(c, 1, pos - 1) statMonitorInclude SubStr(c, pos)
+                FileAppend("✓ Auto-included Extensions\\statmonitor_theme_extension.ahk`n", logFile)
+            }
+        }
+    }
+    if patchMondoInterrupt {
+        mondoInterruptInclude := '#Include "%A_ScriptDir%\..\Extensions\mondo_interrupt_extension.ahk"`r`n'
+        if !InStr(c, 'mondo_interrupt_extension.ahk') {
+            if (pos := InStr(c, "#Warn")) {
+                c := SubStr(c, 1, pos - 1) mondoInterruptInclude SubStr(c, pos)
+                FileAppend("✓ Auto-included Extensions\\mondo_interrupt_extension.ahk`n", logFile)
+            }
+        }
+    }
+
+    ; 1k. Extensions shell should always exist, even when feature modules stay unpatched.
+    fieldFollowingButtonLine := patchTadSyncCore
+        ? 'MainGui.Add("Button", "x15 y45 w150 h20 vFieldFollowingGUI", "Field Following").OnEvent("Click", aq_FieldFollowingGUI)'
+        : 'MainGui.Add("Button", "x15 y45 w150 h20 vFieldFollowingGUI Disabled", "Field Following")'
+    statMonitorButtonLine := patchStatMonitorTheme
+        ? 'MainGui.Add("Button", "x15 y70 w150 h20 vStatMonitorEditorGUI", "StatMonitor Editor").OnEvent("Click", aq_StatMonitorThemeEditorGUI)'
+        : 'MainGui.Add("Button", "x15 y70 w150 h20 vStatMonitorEditorGUI Disabled", "StatMonitor Editor")'
+    blueBoosterLine := patchBfb
+        ? 'MainGui.Add("CheckBox", "x185 y45 w135 h18 vBlueBoosterInterruptCheck" . (BlueBoosterInterruptCheck ? " Checked" : ""), "Blue Booster Interrupt").OnEvent("Click", nm_BlueBoosterToggle)'
+        : 'MainGui.Add("CheckBox", "x185 y45 w135 h18 vBlueBoosterInterruptCheck Disabled", "Blue Booster Interrupt")'
+    stickerStackLine := patchStickerStack
+        ? 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)'
+        : 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck Disabled", "Sticker Stack Interrupt")'
+    mondoInterruptLine := patchMondoInterrupt
+        ? '(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck" . (MondoInterruptCheck ? " Checked" : ""), "Mondo Interrupt")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+        : '(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck Disabled", "Mondo Interrupt")).Section := "Extensions"'
+    glitterExtendLine := patchGlitterExtend
+        ? 'MainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted" . (PFieldBoosted ? " Checked" : ""), "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)'
+        : 'MainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Disabled", "Glitter Extend")'
+    preGlitterLine := patchGlitterExtend
+        ? '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+        : '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck Disabled", "Pre-Glitter")).Section := "Extensions"'
+    enzymeLine := patchEnzymeBalloon
+        ? '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+        : '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly Disabled", "Boosted Enzyme Only")).Section := "Boost"'
+    extensionsUnlockExtras := ""
+    if !patchGlitterExtend
+        extensionsUnlockExtras .= '`tMainGui["PFieldBoosted"].Value := 0`r`n`tMainGui["PreGlitterCheck"].Value := 0`r`n'
+    if !patchBfb
+        extensionsUnlockExtras .= '`tMainGui["BlueBoosterInterruptCheck"].Value := 0`r`n'
+    if !patchStickerStack
+        extensionsUnlockExtras .= '`tMainGui["StickerStackInterruptCheck"].Value := 0`r`n'
+    if !patchMondoInterrupt
+        extensionsUnlockExtras .= '`tMainGui["MondoInterruptCheck"].Value := 0`r`n'
+    if !patchEnzymeBalloon
+        extensionsUnlockExtras .= '`tMainGui["EnzymesBoostedOnly"].Value := 0`r`n'
+
+    if !InStr(c, 'config["Extensions"]') {
+        if (pos := InStr(c, 'config["Status"] := Map(')) {
+            configCode := 'config["Extensions"] := Map("FollowingLeader", 0, "FollowingField", "", "FollowingStartTime", 0, "LastAnnouncedField", "", "FieldFollowingCheck", 0, "FieldFollowingFollowMode", "Follower", "FieldFollowingMaxTime", 900, "FieldFollowingChannelID", "", "PFieldBoosted", 0, "PreGlitterCheck", 0'
+            if patchMondoHop
+                configCode .= ', "AltHopMondoEnabled", 0, "AltHopMondoLeadTime", 1.5, "AltHopMondoState", 0, "AltHopMondoLastTime", 0, "MondoHopLootTime", 45'
+            if patchMondoInterrupt
+                configCode .= ', "MondoInterruptCheck", 1'
+            configCode .= ')`r`n'
+            c := SubStr(c, 1, pos-1) configCode SubStr(c, pos)
+            FileAppend("✓ Added config['Extensions'] shell`n", logFile)
+        }
+    }
+    c := EnsureConfigMapEntry(c, "Extensions", "FollowingLeader", 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FollowingField", '""', &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FollowingStartTime", 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "LastAnnouncedField", '""', &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FieldFollowingCheck", 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FieldFollowingFollowMode", '"Follower"', &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FieldFollowingMaxTime", 900, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "FieldFollowingChannelID", '""', &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "PFieldBoosted", 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "PreGlitterCheck", 0, &mapChanged)
+    if patchMondoHop {
+        c := EnsureConfigMapEntry(c, "Extensions", "AltHopMondoEnabled", 0, &mapChanged)
+        c := EnsureConfigMapEntry(c, "Extensions", "AltHopMondoLeadTime", 1.5, &mapChanged)
+        c := EnsureConfigMapEntry(c, "Extensions", "AltHopMondoState", 0, &mapChanged)
+        c := EnsureConfigMapEntry(c, "Extensions", "AltHopMondoLastTime", 0, &mapChanged)
+        c := EnsureConfigMapEntry(c, "Extensions", "MondoHopLootTime", 45, &mapChanged)
+    }
+    c := EnsureConfigMapEntry(c, "Boost", "BlueBoosterInterruptCheck", patchBfb ? 1 : 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "LastBlueBoostUse", 1, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "StickerStackInterruptCheck", patchStickerStack ? 1 : 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackUse", 1, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "MondoInterruptCheck", patchMondoInterrupt ? 1 : 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Settings", "EnzymesBoostedOnly", patchEnzymeBalloon ? 1 : 0, &mapChanged)
+
+    oldMondoButton := 'MainGui.Add("Button", "x170 y40 w150 h20 vMondoHopGUI Disabled", "Mondo Hop").OnEvent("Click", aq_MondoHopGUI)'
+    oldBoostGroup := 'MainGui.Add("GroupBox", "x15 y65 w470 h55", "TadSync Boosted")'
+    oldBoostedTabLine := 'MainGui.Add("CheckBox", "x25 y80 +center vPFieldBoosted Checked" PFieldBoosted, "Boosted Field``nBuffs").OnEvent("Click", aq_togglePFieldBoosted)'
+    oldGlitterBoostLine1 := 'MainGui.Add("CheckBox", "x205 y106 w85 h30 +Center vPFieldBoosted Checked" PFieldBoosted, "Glitter``nExtend").OnEvent("Click", aq_togglePFieldBoosted)'
+    oldGlitterBoostLine2 := 'MainGui.Add("CheckBox", "x198 y79 w95 h16 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)'
+    oldGlitterBoostLine3 := 'MainGui.Add("CheckBox", "x198 y100 w95 h16 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)'
+    oldBfbBoostLine1 := 'MainGui.Add("CheckBox", "x205 y110 w85 h30 +Center vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "BFB``nInterrupt").OnEvent("Click", nm_BlueBoosterToggle)'
+    oldBfbBoostLine2 := 'MainGui.Add("CheckBox", "x205 y125 w85 h30 +Center vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "BFB``nInterrupt").OnEvent("Click", nm_BlueBoosterToggle)'
+    oldBfbBoostLine3 := 'MainGui.Add("CheckBox", "x205 y136 w85 h30 +Center vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck, "BFB``nInterrupt").OnEvent("Click", nm_BlueBoosterToggle)'
+    oldStickerBoostLine1 := 'MainGui.Add("CheckBox", "x205 y145 w85 h30 +Center vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack``nInterrupt").OnEvent("Click", nm_StickerStackToggle)'
+    oldStickerBoostLine2 := 'MainGui.Add("CheckBox", "x205 y160 w85 h30 +Center vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack``nInterrupt").OnEvent("Click", nm_StickerStackToggle)'
+    oldStickerBoostLine3 := 'MainGui.Add("CheckBox", "x205 y171 w85 h30 +Center vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack``nInterrupt").OnEvent("Click", nm_StickerStackToggle)'
+    oldEnzymeBoostLine1 := '(GuiCtrl := MainGui.Add("CheckBox", "x205 y180 w85 h32 +Center vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted``nEnzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+    oldEnzymeBoostLine2 := '(GuiCtrl := MainGui.Add("CheckBox", "x205 y195 w85 h32 +Center vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted``nEnzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+    oldEnzymeBoostLine3 := '(GuiCtrl := MainGui.Add("CheckBox", "x205 y206 w85 h32 +Center vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted``nEnzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+    newExtensionsLayout := JoinLines(
+        'MainGui.Add("GroupBox", "x5 y23 w165 h80", "Extensions")',
+        'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")',
+        'MainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")',
+        '',
+        'MainGui.SetFont("s8 cDefault Norm", "Tahoma")',
+        '',
+        fieldFollowingButtonLine,
+        statMonitorButtonLine,
+        blueBoosterLine,
+        stickerStackLine,
+        mondoInterruptLine,
+        glitterExtendLine,
+        preGlitterLine,
+        enzymeLine,
+        'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")',
+        'MainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")'
+    )
+
+    if InStr(c, '"TadSync"')
+        c := StrReplace(c, '"TadSync"', '"Extensions"')
+    if (tabArrPos := InStr(c, 'TabArr := ')) {
+        tabArrBlock := SubStr(c, tabArrPos, 250)
+        if InStr(tabArrBlock, '"Extensions"')
+            c := RegExReplace(c, '(TabArr\s*:=\s*\[)(.*?)(\])', '$1' ReorderExtensionsTabs('$2') '$3', , 1)
+        else
+            c := RegExReplace(c, '(TabArr\s*:=\s*\[)(.*?)(\])', '$1$2, "Extensions"$3', , 1)
+    }
+    if InStr(c, oldMondoButton)
+        c := StrReplace(c, oldMondoButton "`r`n", "")
+    if InStr(c, oldBoostGroup)
+        c := StrReplace(c, oldBoostGroup "`r`n`r`n", "")
+    if InStr(c, oldBoostedTabLine)
+        c := StrReplace(c, oldBoostedTabLine "`r`n", "")
+    c := StrReplace(c, '; TADSYNC TAB', '; EXTENSIONS TAB')
+    c := StrReplace(c, 'TabCtrl.UseTab("TadSync")', 'TabCtrl.UseTab("Extensions")')
+    c := StrReplace(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h210", "TadSync Settings")`r`n`r`nMainGui.SetFont("s8 cDefault Norm", "Tahoma")`r`n`r`nMainGui.Add("Button", "x15 y40 w150 h20 vFieldFollowingGUI Disabled", "Field Following").OnEvent("Click", aq_FieldFollowingGUI)', newExtensionsLayout)
+    c := StrReplace(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h80", "Extensions")`r`n`r`nMainGui.SetFont("s8 cDefault Norm", "Tahoma")`r`n`r`nMainGui.Add("Button", "x15 y45 w150 h20 vFieldFollowingGUI Disabled", "Field Following").OnEvent("Click", aq_FieldFollowingGUI)', newExtensionsLayout)
+    c := StrReplace(c, oldGlitterBoostLine1 "`r`n", "")
+    c := StrReplace(c, oldGlitterBoostLine2 "`r`n", "")
+    c := StrReplace(c, oldGlitterBoostLine3 "`r`n", "")
+    c := StrReplace(c, oldBfbBoostLine1 "`r`n", "")
+    c := StrReplace(c, oldBfbBoostLine2 "`r`n", "")
+    c := StrReplace(c, oldBfbBoostLine3 "`r`n", "")
+    c := StrReplace(c, oldStickerBoostLine1 "`r`n", "")
+    c := StrReplace(c, oldStickerBoostLine2 "`r`n", "")
+    c := StrReplace(c, oldStickerBoostLine3 "`r`n", "")
+    c := StrReplace(c, oldEnzymeBoostLine1 "`r`n", "")
+    c := StrReplace(c, oldEnzymeBoostLine2 "`r`n", "")
+    c := StrReplace(c, oldEnzymeBoostLine3 "`r`n", "")
+    c := RegExReplace(
+        c,
+        'MainGui\.Add\("Button", "x15 y70 w150 h20 vStatMonitorEditorGUI(?: Disabled)?", "StatMonitor Editor"\)(?:\.OnEvent\("Click", aq_StatMonitorThemeEditorGUI\))?',
+        statMonitorButtonLine,
+        ,
+        1
+    )
+    c := StrReplace(c, 'MainGui.Add("GroupBox", "x175 y23 w315 h80", "Interupts & Extras")', 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")`r`nMainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")')
+    c := StrReplace(c, 'MainGui.Add("Text", "x12 y109 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y121 w476 Center c666666", "Inspired by @baspas")', 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")')
+    if !InStr(c, 'TabCtrl.UseTab("Extensions")') {
+        pattern := 'is)(SetLoadingProgress\(99\))'
+        if RegExMatch(c, pattern, &match) {
+            tabContent := JoinLines(
+                '`r`n; EXTENSIONS TAB',
+                '; ------------------------',
+                '`r`nTabCtrl.UseTab("Extensions")',
+                '`r`nMainGui.SetFont("w700")',
+                '`r`n' newExtensionsLayout,
+                '`r`nTabCtrl.UseTab()',
+                ''
+            )
+            c := RegExReplace(c, pattern, tabContent match[1])
+        }
+    }
+    if InStr(c, "nm_LockTabs") {
+        lockTabsPos := InStr(c, "nm_LockTabs")
+        lockTabsBlock := SubStr(c, lockTabsPos, 250)
+        if InStr(lockTabsBlock, '"Extensions"')
+            c := RegExReplace(c, '(static tabs\s*:=\s*\[)(.*?)(\])', '$1' ReorderExtensionsTabs('$2') '$3', , 1)
+        else
+            c := RegExReplace(c, '(static tabs\s*:=\s*\[)(.*?)(\])', '$1$2, "Extensions"$3', , 1)
+    }
+
+    newFuncs := '`r`nnm_TabExtensionsLock(){`r`n'
+        . '`tMainGui["FieldFollowingGUI"].Enabled := 0`r`n'
+        . '`tMainGui["StatMonitorEditorGUI"].Enabled := 0`r`n'
+        . '`tMainGui["PFieldBoosted"].Enabled := 0`r`n'
+        . '`tMainGui["PreGlitterCheck"].Enabled := 0`r`n'
+        . '`tMainGui["BlueBoosterInterruptCheck"].Enabled := 0`r`n'
+        . '`tMainGui["StickerStackInterruptCheck"].Enabled := 0`r`n'
+        . '`tMainGui["MondoInterruptCheck"].Enabled := 0`r`n'
+        . '`tMainGui["EnzymesBoostedOnly"].Enabled := 0`r`n'
+        . '}`r`nnm_TabExtensionsUnLock(){`r`n'
+        . extensionsUnlockExtras
+        . '`tMainGui["FieldFollowingGUI"].Enabled := ' (patchTadSyncCore ? 1 : 0) '`r`n'
+        . '`tMainGui["StatMonitorEditorGUI"].Enabled := ' (patchStatMonitorTheme ? 1 : 0) '`r`n'
+        . '`tMainGui["PFieldBoosted"].Enabled := ' (patchGlitterExtend ? 1 : 0) '`r`n'
+        . '`tMainGui["PreGlitterCheck"].Enabled := ' (patchGlitterExtend ? 1 : 0) '`r`n'
+        . '`tMainGui["BlueBoosterInterruptCheck"].Enabled := ' (patchBfb ? 1 : 0) '`r`n'
+        . '`tMainGui["StickerStackInterruptCheck"].Enabled := ' (patchStickerStack ? 1 : 0) '`r`n'
+        . '`tMainGui["MondoInterruptCheck"].Enabled := ' (patchMondoInterrupt ? 1 : 0) '`r`n'
+        . '`tMainGui["EnzymesBoostedOnly"].Enabled := ' (patchEnzymeBalloon ? 1 : 0) '`r`n'
+        . '}`r`nnm_TabTadSyncLock(){`r`n`tnm_TabExtensionsLock()`r`n}`r`nnm_TabTadSyncUnLock(){`r`n`tnm_TabExtensionsUnLock()`r`n}'
+    oldFuncs := '`r`nnm_TabTadSyncLock(){`r`n`tMainGui["FieldFollowingGUI"].Enabled := 0`r`n`tMainGui["MondoHopGUI"].Enabled := 0`r`n}`r`nnm_TabTadSyncUnLock(){`r`n`tMainGui["FieldFollowingGUI"].Enabled := 1`r`n`tMainGui["MondoHopGUI"].Enabled := 1`r`n}'
+    cNew := StrReplace(c, oldFuncs, newFuncs)
+    if (cNew != c)
+        c := cNew
+    else if InStr(c, "nm_TabExtensionsLock") {
+        c := RegExReplace(c, '(?s)`r`nnm_TabExtensionsLock\(\)\{.*?\}`r`nnm_TabExtensionsUnLock\(\)\{.*?\}(?:`r`nnm_TabTadSyncLock\(\)\{.*?\}`r`nnm_TabTadSyncUnLock\(\)\{.*?\})?', newFuncs, , 1)
+    } else
+        c .= newFuncs
+
+    if patchMondoInterrupt {
+        cNew := StrReplace(c, ', "LastMondoBuff", 1`r`n`t`t, "MondoInterruptCheck", 1', ', "LastMondoBuff", 1')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Removed legacy Collect config copy of Mondo Interrupt`n", logFile)
+        }
+
+        cNew := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x+8 yp-2 vMondoInterruptCheck Disabled Hidden Checked" MondoInterruptCheck, "Int")).Section := "Collect", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n', "")
+        cNew := StrReplace(cNew, 'MainGui["MondoBuffCheck"].Enabled := 0`r`n`tMainGui["MondoSecs"].Enabled := 0`r`n`tMainGui["MondoInterruptCheck"].Enabled := 0', 'MainGui["MondoBuffCheck"].Enabled := 0`r`n`tMainGui["MondoSecs"].Enabled := 0')
+        cNew := StrReplace(cNew, 'MainGui["MondoBuffCheck"].Enabled := 1`r`n`tMainGui["MondoSecs"].Enabled := 1`r`n`tMainGui["MondoInterruptCheck"].Enabled := 1', 'MainGui["MondoBuffCheck"].Enabled := 1`r`n`tMainGui["MondoSecs"].Enabled := 1')
+        cNew := StrReplace(cNew, '"ClockCheck","MondoBuffCheck","MondoAction","MondoInterruptCheck","AntPassCheck"', '"ClockCheck","MondoBuffCheck","MondoAction","AntPassCheck"')
+        cNew := StrReplace(cNew, 'MondoBuffControls := ["MondoSecs", "MondoSecsText", "MondoInterruptCheck"]', 'MondoBuffControls := ["MondoSecs", "MondoSecsText"]')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Removed legacy Collect-tab Mondo Interrupt wiring`n", logFile)
+        }
+
+        mondoInterruptOld := JoinLines(
+            'nm_MondoInterrupt() => (utc_min := FormatTime(A_NowUTC, "m"), now := nowUnix(),',
+            '`t((MondoBuffCheck = 1) && ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Kill")',
+            '`t`t|| (!nm_GatherBoostInterrupt()',
+            '`t`t`t&& ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Buff")',
+            '`t`t`t|| (utc_min<12 && (now-LastGuid)<60 && PMondoGuid && MondoAction="Guid")',
+            '`t`t`t|| (utc_min<=8 && (now-LastMondoBuff)>960 && PMondoGuid && MondoAction="Tag")))',
+            '`t`t)',
+            '`t)',
+            ')'
+        )
+        mondoInterruptNew := JoinLines(
+            'nm_MondoInterrupt() => (mondointerrupt_ShouldTrigger() || (utc_min := FormatTime(A_NowUTC, "m"), now := nowUnix(),',
+            '`t((MondoBuffCheck = 1) && ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Kill")',
+            '`t`t|| (!nm_GatherBoostInterrupt()',
+            '`t`t`t&& ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Buff")',
+            '`t`t`t|| (utc_min<12 && (now-LastGuid)<60 && PMondoGuid && MondoAction="Guid")',
+            '`t`t`t|| (utc_min<=8 && (now-LastMondoBuff)>960 && PMondoGuid && MondoAction="Tag")))',
+            '`t`t)',
+            '`t)',
+            '))'
+        )
+        cNew := StrReplace(c, mondoInterruptOld, mondoInterruptNew)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Extended nm_MondoInterrupt() with standalone Mondo Interrupt trigger`n", logFile)
+        }
+
+        mondoHandleNeedle := JoinLines(
+            '	global MondoBuffCheck, PMondoGuid, LastGuid, MondoAction, LastMondoBuff, PMondoGuidComplete, GatherFieldBoostedStart, LastGlitter',
+            '	if nm_NightInterrupt()',
+            '		return',
+            '	if nm_MondoInterrupt(){'
+        )
+        mondoHandleInsert := JoinLines(
+            '	global MondoBuffCheck, PMondoGuid, LastGuid, MondoAction, LastMondoBuff, PMondoGuidComplete, GatherFieldBoostedStart, LastGlitter',
+            '	if nm_NightInterrupt()',
+            '		return',
+            '	if mondointerrupt_Handle()',
+            '		return',
+            '	if nm_MondoInterrupt(){'
+        )
+        cNew := StrReplace(c, mondoHandleNeedle, mondoHandleInsert)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added standalone Mondo Interrupt handler entry to nm_Mondo()`n", logFile)
+        }
     }
 
     ; 1l2. Inject field_type determination before FDC switch (for per-booster glitter timing)
@@ -2508,7 +2859,6 @@ if FileExist(natroPath) {
 
 
 }
-
 ; 2. PATCH STATUS.AHK
 if FileExist(statusPath) {
     c := FileRead(statusPath, "UTF-8")
@@ -3431,13 +3781,36 @@ if FileExist(configPath) {
     if patchBfb {
         c := EnsureIniKey(c, "Boost", "BlueBoosterInterruptCheck", 1, &cfgChanged)
         c := EnsureIniKey(c, "Boost", "LastBlueBoostUse", 1, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Boost", "BlueBoosterInterruptCheck", 0, &cfgChanged)
     }
     if patchStickerStack {
         c := EnsureIniKey(c, "Boost", "StickerStackInterruptCheck", 1, &cfgChanged)
         c := EnsureIniKey(c, "Boost", "LastStickerStackUse", 1, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Boost", "StickerStackInterruptCheck", 0, &cfgChanged)
+    }
+    if patchMondoInterrupt {
+        c := EnsureIniKey(c, "Extensions", "MondoInterruptCheck", 1, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Extensions", "MondoInterruptCheck", 0, &cfgChanged)
+    }
+    if patchGlitterExtend {
+        c := EnsureIniKey(c, "Extensions", "PFieldBoosted", 0, &cfgChanged)
+        c := EnsureIniKey(c, "Extensions", "PreGlitterCheck", 0, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Extensions", "PFieldBoosted", 0, &cfgChanged)
+        c := SetIniSectionKey(c, "Extensions", "PreGlitterCheck", 0, &cfgChanged)
     }
     if patchTadSyncCore {
-        c := EnsureIniKey(c, "Extensions", "PreGlitterCheck", 0, &cfgChanged)
+        c := EnsureIniKey(c, "Extensions", "FieldFollowingCheck", 0, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Extensions", "FieldFollowingCheck", 0, &cfgChanged)
+    }
+    if patchEnzymeBalloon {
+        c := EnsureIniKey(c, "Settings", "EnzymesBoostedOnly", 1, &cfgChanged)
+    } else {
+        c := SetIniSectionKey(c, "Settings", "EnzymesBoostedOnly", 0, &cfgChanged)
     }
     if patchStatMonitorTheme {
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackgroundMode", "Default", &cfgChanged)
