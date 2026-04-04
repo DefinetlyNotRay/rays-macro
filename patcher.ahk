@@ -2864,6 +2864,93 @@ if FileExist(statusPath) {
     c := FileRead(statusPath, "UTF-8")
     orig := c
 
+    if true {
+        statusSettingsNeedle := 'settings["PriorityListNumeric"] := {enum: 366, type: "int", section: "Settings", regex: "i)^[1-8]{8}$"}'
+        statusSettingsInsert := JoinLines(
+            'settings["PriorityListNumeric"] := {enum: 366, type: "int", section: "Settings", regex: "i)^[1-8]{8}$"}',
+            'settings["FieldFollowingCheck"] := {enum: ResolveEnumInt("FieldFollowingCheck", 367), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
+            'settings["BlueBoosterInterruptCheck"] := {enum: ResolveEnumInt("BlueBoosterInterruptCheck", 370), type: "int", section: "Boost", regex: "i)^(0|1)$"}',
+            'settings["StickerStackInterruptCheck"] := {enum: ResolveEnumInt("StickerStackInterruptCheck", 371), type: "int", section: "Boost", regex: "i)^(0|1)$"}',
+            'settings["PFieldBoosted"] := {enum: ResolveEnumInt("PFieldBoosted", 372), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
+            'settings["PreGlitterCheck"] := {enum: ResolveEnumInt("PreGlitterCheck", 373), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
+            'settings["EnzymesBoostedOnly"] := {enum: ResolveEnumInt("EnzymesBoostedOnly", 374), type: "int", section: "Settings", regex: "i)^(0|1)$"}',
+            'settings["MondoInterruptCheck"] := {enum: ResolveEnumInt("MondoInterruptCheck", 375), type: "int", section: "Extensions", regex: "i)^(0|1)$"}'
+        )
+        c := StrReplace(c, statusSettingsNeedle, statusSettingsInsert)
+
+        c := StrReplace(c, 'sections := Map("Boost", "**__Boost__**"`r`n				,"Collect", "**__Collect__**"', 'sections := Map("Boost", "**__Boost__**"`r`n				,"Collect", "**__Collect__**"`r`n				,"Extensions", "**__Extensions__**"')
+
+        if !InStr(c, 'ResolveEnumInt(name, fallback := 0)') {
+            aliasNeedle := 'nowUnix() => DateDiff(A_NowUTC, "19700101000000", "Seconds")'
+            aliasInsert := JoinLines(
+                'nowUnix() => DateDiff(A_NowUTC, "19700101000000", "Seconds")',
+                '',
+                'ResolveEnumInt(name, fallback := 0)',
+                '{',
+                '`tstatic enumMap := ""',
+                '`tif !IsObject(enumMap) {',
+                '`t`tenumMap := Map()',
+                '`t`tenumPath := A_ScriptDir "\..\lib\enum\EnumInt.ahk"',
+                '`t`ttry text := FileRead(enumPath, "UTF-8")',
+                '`t`tcatch',
+                '`t`t`treturn fallback',
+                '`t`tindex := 0',
+                '`t`tfor line in StrSplit(text, Chr(10), Chr(13))',
+                '`t`t{',
+                '`t`t`tline := Trim(line)',
+                '`t`t`tif (SubStr(line, 1, 1) != Chr(34))',
+                '`t`t`t`tcontinue',
+                '`t`t`tendQuote := InStr(line, Chr(34), , 2)',
+                '`t`t`tif !endQuote',
+                '`t`t`t`tcontinue',
+                '`t`t`tindex += 1',
+                '`t`t`tenumName := SubStr(line, 2, endQuote - 2)',
+                '`t`t`tenumMap[StrLower(enumName)] := index',
+                '`t`t}',
+                '`t}',
+                '`tkey := StrLower(Trim(name))',
+                '`treturn enumMap.Has(key) ? enumMap[key] : fallback',
+                '}',
+                '',
+                'ResolveModuleSetting(name, &displayName := "")',
+                '{',
+                '`tstatic moduleAliases := Map(',
+                '`t`t"fieldfollowingcheck", "FieldFollowingCheck",',
+                '`t`t"fieldfollowing", "FieldFollowingCheck",',
+                '`t`t"blueboosterinterruptcheck", "BlueBoosterInterruptCheck",',
+                '`t`t"bfbinterrupt", "BlueBoosterInterruptCheck",',
+                '`t`t"bfbinterupt", "BlueBoosterInterruptCheck",',
+                '`t`t"stickerstackinterruptcheck", "StickerStackInterruptCheck",',
+                '`t`t"stickerstackinterrupt", "StickerStackInterruptCheck",',
+                '`t`t"glitterextend", "PFieldBoosted",',
+                '`t`t"pfieldboosted", "PFieldBoosted",',
+                '`t`t"preglittercheck", "PreGlitterCheck",',
+                '`t`t"preglitter", "PreGlitterCheck",',
+                '`t`t"enzymesboostedonly", "EnzymesBoostedOnly",',
+                '`t`t"mondointerruptcheck", "MondoInterruptCheck",',
+                '`t`t"mondointerrupt", "MondoInterruptCheck",',
+                '`t`t"mondointeruptcheck", "MondoInterruptCheck",',
+                '`t`t"mondointerupt", "MondoInterruptCheck"',
+                '`t)',
+                '`tstatic displayAliases := Map(',
+                '`t`t"PFieldBoosted", "GlitterExtend"',
+                '`t)',
+                '`tkey := Trim(name)',
+                '`tif !StrLen(key)',
+                '`t`treturn ""',
+                '`tif !moduleAliases.Has(StrLower(key))',
+                '`t`treturn ""',
+                '`tmoduleName := moduleAliases[StrLower(key)]',
+                '`tdisplayName := displayAliases.Has(moduleName) ? displayAliases[moduleName] : moduleName',
+                '`treturn moduleName',
+                '}'
+            )
+            c := StrReplace(c, aliasNeedle, aliasInsert)
+        }
+
+        c := StrReplace(c, '					sections[v.section] .= "`n" k', '					sections[v.section] .= "`n" ((k = "PFieldBoosted") ? "GlitterExtend" : k)')
+    }
+
     if (patchTadSyncCore) {
     ; 2a0. Clean up old submacros/ includes (migrate to Extensions/ path)
     c := RegExReplace(c, 'm)#Include "%A_ScriptDir%\\tadsync_(\w+)\.ahk"', '#Include "%A_ScriptDir%\..\Extensions\tadsync_$1.ahk"')
@@ -2964,6 +3051,35 @@ if FileExist(statusPath) {
     }
     }
 
+    if true {
+    if !InStr(c, '"name": "' "' commandPrefix 'modset [module] [0/1]" '",') {
+        advancedNeedle := JoinLines(
+            '`t`t`t`t`t{',
+            '`t`t`t`t`t`t"name": "' "' commandPrefix 'get [setting]" '",',
+            '`t`t`t`t`t`t"value": "Gets the current value of a setting in the macro",',
+            '`t`t`t`t`t`t"inline": true',
+            '`t`t`t`t`t},'
+        )
+        advancedInsert := JoinLines(
+            '`t`t`t`t`t{',
+            '`t`t`t`t`t`t"name": "' "' commandPrefix 'get [setting]" '",',
+            '`t`t`t`t`t`t"value": "Gets the current value of a setting in the macro",',
+            '`t`t`t`t`t`t"inline": true',
+            '`t`t`t`t`t},',
+            '`t`t`t`t`t{',
+            '`t`t`t`t`t`t"name": "' "' commandPrefix 'modset [module] [0/1]" '",',
+            '`t`t`t`t`t`t"value": "Sets a patched module toggle like ``GlitterExtend`` or ``MondoInterruptCheck``",',
+            '`t`t`t`t`t`t"inline": true',
+            '`t`t`t`t`t},'
+        )
+        cNew := StrReplace(c, advancedNeedle, advancedInsert)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added modset help entry to Status.ahk`n", logFile)
+        }
+    }
+    }
+
     if (patchAutoJelly) {
     if !InStr(c, 'Clicks Yes on the active Auto-Jelly prompt') {
         helpPattern := InStr(c, 'Forces the Sticker Stack interrupt path to trigger on the next check')
@@ -2979,6 +3095,53 @@ if FileExist(statusPath) {
         }
     }
     c := StrReplace(c, '"Keeps/replaces an amulet if prompt is on screen"', '"Keeps/replaces an amulet prompt if it is on screen"')
+    }
+
+    if true {
+    modsetCanonical := JoinLines(
+        '`t`tcase "modset":',
+        '`t`tLoop 1',
+        '`t`t{',
+        '`t`t`tmoduleName := ResolveModuleSetting(params[2], &displayName)',
+        '`t`t`tif !moduleName',
+        '`t`t`t{',
+        '`t`t`t`tdiscord.SendEmbed(Format("{} is not a valid module toggle! Use ?help advanced for the ?modset format.", (StrLen(params[2]) > 0) ? params[2] : "<blank>"), 16711731, , , , id)',
+        '`t`t`t`tbreak',
+        '`t`t`t}',
+        '',
+        '`t`t`tvalue := Trim(SubStr(command.content, InStr(command.content, params[2]) + StrLen(params[2])))',
+        '`t`t`tswitch StrLower(value), 0',
+        '`t`t`t{',
+        '`t`t`t`tcase "on":',
+        '`t`t`t`tvalue := 1',
+        '`t`t`t`tcase "off":',
+        '`t`t`t`tvalue := 0',
+        '`t`t`t}',
+        '',
+        '`t`t`tif !(value ~= "i)^(0|1)$")',
+        '`t`t`t{',
+        '`t`t`t`tdiscord.SendEmbed(Format("{} is not a valid module toggle value! Use 0/1 or off/on.", (StrLen(value) > 0) ? value : "<blank>"), 16711731, , , , id)',
+        '`t`t`t`tbreak',
+        '`t`t`t}',
+        '',
+        '`t`t`tv := settings[moduleName]',
+        '`t`t`t(v.type = "str")',
+        '`t`t`t`t? UpdateStr(moduleName, (value = "<blank>") ? "" : value, v.section)',
+        '`t`t`t`t: UpdateInt(moduleName, value, v.section)',
+        '`t`t`tdiscord.SendEmbed(Format("Set module {} to {}!", displayName, value), 5066239, , , , id)',
+        '`t`t}'
+    )
+    if InStr(c, 'case "modset":') {
+        c := RegExReplace(c, '(?ms)^\t\tcase "modset":.*?(?=^\t\tcase "hourlyreport", "hr":)', modsetCanonical "`r`n`r`n")
+    } else {
+        commandNeedle := '`t`tcase "close":'
+        commandInsert := JoinLines('', '', modsetCanonical, '', '', commandNeedle)
+        cNew := StrReplace(c, commandNeedle, commandInsert)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added modset command to Status.ahk`n", logFile)
+        }
+    }
     }
 
     if (patchForceHourly) {
@@ -3891,12 +4054,12 @@ if patchStatMonitorTheme {
 }
 
 ; 3. PATCH ENUMS
-if (patchTadSyncCore) {
+if (patchTadSyncCore || patchGlitterExtend || patchBfb || patchStickerStack || patchEnzymeBalloon || patchMondoInterrupt) {
 try {
     if FileExist(enumIntPath) {
         c := FileRead(enumIntPath, "UTF-8")
         orig := c
-        vars := ["FieldFollowingCheck", "VicHopCheck", "AltHopMondoEnabled"]
+        vars := ["FieldFollowingCheck", "VicHopCheck", "AltHopMondoEnabled", "BlueBoosterInterruptCheck", "StickerStackInterruptCheck", "PFieldBoosted", "PreGlitterCheck", "EnzymesBoostedOnly", "MondoInterruptCheck"]
         for v in vars {
             if !InStr(c, '"' v '"') {
                 c := RegExReplace(c, "(\s*\])", '`r`n`t, "' v '"$1')
@@ -3906,7 +4069,7 @@ try {
             FileDelete(enumIntPath)
             FileAppend(c, enumIntPath, "UTF-8")
             msg .= "âœ“ EnumInt.ahk registered`n"
-            FileAppend("âœ“ Registered TadSync/VicHop in EnumInt.ahk`n", logFile)
+            FileAppend("âœ“ Registered custom module enums in EnumInt.ahk`n", logFile)
         }
     }
 } catch {
@@ -3927,7 +4090,7 @@ try {
             FileDelete(enumStrPath)
             FileAppend(c, enumStrPath, "UTF-8")
             msg .= "âœ“ EnumStr.ahk registered`n"
-            FileAppend("âœ“ Registered TadSync/VicHop in EnumStr.ahk`n", logFile)
+            FileAppend("âœ“ Registered custom module strings in EnumStr.ahk`n", logFile)
         }
     }
 } catch {
