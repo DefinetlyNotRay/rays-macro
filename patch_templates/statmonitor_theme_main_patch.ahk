@@ -33,7 +33,7 @@ version := "2.3"
 ; ▰▰▰▰▰▰▰▰
 
 ; set image width and height, in pixels
-w := 6000, h := 6740
+w := 6000, h := StatMonitorTheme_ResolveCanvasHeight()
 
 ; prepare graphics and template bitmap
 pToken := Gdip_Startup()
@@ -108,8 +108,10 @@ honey_12h[180] := start_honey
 ; BUFF MONITORING
 ; buff_values format: buff:{time_coefficient:value}
 (buff_values := Map()).CaseSense := 0
-for v in ["haste","melody","redboost","blueboost","whiteboost","focus","bombcombo","balloonaura","clock","jbshare","babylove","inspire","bear","pollenmark","honeymark","festivemark","popstar","comforting","motivating","satisfying","refreshing","invigorating","blessing","bloat","guiding","mondo","reindeerfetch","tideblessing","beesmascheer","pinetreefieldboost","blueflowerfieldboost","bamboofieldboost","snowflakebuff","cloudbuff"]
+(future_buff_values := Map()).CaseSense := 0
+for v in ["haste","melody","redboost","blueboost","whiteboost","focus","bombcombo","balloonaura","clock","jbshare","babylove","inspire","bear","pollenmark","honeymark","festivemark","popstar","comforting","motivating","satisfying","refreshing","invigorating","blessing","bloat","guiding","mondo","reindeerfetch","tideblessing","beesmascheer","pinetreefieldboost","blueflowerfieldboost","bamboofieldboost","snowflakebuff","cloudbuff","digitalcorruption","StickerStack"]
 	buff_values[v] := Map()
+future_buff_values["StickerStack"] := Map()
 
 ; INFO FROM MAIN SCRIPT
 ; status_changes format: (A_Min*60+A_Sec+1):status_number (0 = other, 1 = gathering, 2 = converting)
@@ -126,6 +128,7 @@ OnMessage(0x5554, SetStatus, 255)
 OnMessage(0x5555, IncrementStat, 255)
 OnMessage(0x5556, SetAbility, 255)
 OnMessage(0x5557, SetBackpack, 255)
+OnMessage(0x5559, BuffActivated, 255)
 OnMessage(0x5563, ForceReport, 255)
 
 ForceReport(*) {
@@ -218,10 +221,11 @@ if (statMonitorMockMode = "")
 StatMonitorTheme_DrawBackground(G, w, h)
 
 ; regions format: region_name:[x,y,w,h]
-regions := Map("honey/sec", [120,120,4080,1080]
+main_width := Max(240, Min(4080, w - 240))
+regions := Map("honey/sec", [120,120,main_width,1080]
 	, "stats", [w-1560-120,120,1560,h-240]
-	, "backpack", [120,240+1080,4080,678]
-	, "buffs", [120,360+1758,4080,h-480-1758])
+	, "backpack", [120,240+1080,main_width,678]
+	, "buffs", [120,360+1758,main_width,h-480-1758])
 
 stat_regions := Map("lasthour", [regions["stats"][1]+100,regions["stats"][2]+100,regions["stats"][3]-200,1206]
 	, "session", [regions["stats"][1]+100,regions["stats"][2]+1406,regions["stats"][3]-200,1289]
@@ -250,32 +254,13 @@ Gdip_TextToGraphics(G, "BACKPACK", "s64 Center Bold c" smTextPrimary " x" region
 
 ; DRAW GRAPHS AND OTHER ASSETS
 ; declare coordinate bounds for each graph
-graph_regions := Map("honey/sec", [regions["honey/sec"][1]+320,regions["honey/sec"][2]+130,3600,800]
-	, "backpack", [regions["backpack"][1]+320,regions["backpack"][2]+130,3600,400]
-	, "boost", [regions["buffs"][1]+320,regions["buffs"][2]+135,3600,280]
-	, "haste", [regions["buffs"][1]+320,regions["buffs"][2]+435,3600,280]
-	, "focus", [regions["buffs"][1]+320,regions["buffs"][2]+735,3600,280]
-	, "bombcombo", [regions["buffs"][1]+320,regions["buffs"][2]+1035,3600,280]
-	, "balloonaura", [regions["buffs"][1]+320,regions["buffs"][2]+1335,3600,280]
-	, "inspire", [regions["buffs"][1]+320,regions["buffs"][2]+1635,3600,280]
-	, "reindeerfetch", [regions["buffs"][1]+320,regions["buffs"][2]+1935,3600,280]
-	, "honeymark", [regions["buffs"][1]+320,regions["buffs"][2]+2235,3600,120]
-	, "pollenmark", [regions["buffs"][1]+320,regions["buffs"][2]+2375,3600,120]
-	, "festivemark", [regions["buffs"][1]+320,regions["buffs"][2]+2515,3600,120]
-	, "popstar", [regions["buffs"][1]+320,regions["buffs"][2]+2655,3600,110]
-	, "melody", [regions["buffs"][1]+320,regions["buffs"][2]+2785,3600,110]
-	, "bear", [regions["buffs"][1]+320,regions["buffs"][2]+2915,3600,110]
-	, "babylove", [regions["buffs"][1]+320,regions["buffs"][2]+3045,3600,110]
-	, "jbshare", [regions["buffs"][1]+320,regions["buffs"][2]+3175,3600,110]
-	, "guiding", [regions["buffs"][1]+320,regions["buffs"][2]+3305,3600,110]
-	, "beesmascheer", [regions["buffs"][1]+320,regions["buffs"][2]+3435,3600,110]
-	, "pinetreefieldboost", [regions["buffs"][1]+320,regions["buffs"][2]+3565,3600,110]
-	, "bamboofieldboost", [regions["buffs"][1]+320,regions["buffs"][2]+3695,3600,110]
-	, "blueflowerfieldboost", [regions["buffs"][1]+320,regions["buffs"][2]+3825,3600,110]
-	, "snowflakebuff", [regions["buffs"][1]+320,regions["buffs"][2]+3955,3600,110]
-	, "cloudbuff", [regions["buffs"][1]+320,regions["buffs"][2]+4085,3600,110]
+graph_width := Max(240, regions["honey/sec"][3] - 480)
+graph_regions := Map("honey/sec", [regions["honey/sec"][1]+320,regions["honey/sec"][2]+130,graph_width,800]
+	, "backpack", [regions["backpack"][1]+320,regions["backpack"][2]+130,graph_width,400]
 	, "honey", [stat_regions["lasthour"][1]+200,stat_regions["lasthour"][2]+650,1080,480]
 	, "honey12h", [stat_regions["session"][1]+200,stat_regions["session"][2]+734,1080,480])
+for k,v in StatMonitorTheme_GetBuffGraphRegions(regions)
+	graph_regions[k] := v
 
 ; draw graph grids and axes
 pPen := Gdip_CreatePen(0x40c0c0f0, 4)
@@ -284,7 +269,8 @@ Loop 61
 	n := (Mod(A_Index, 10) = 1) ? 45 : 25
 	Gdip_DrawLine(G, pPen, graph_regions["honey/sec"][1]+graph_regions["honey/sec"][3]*(A_Index-1)//60, graph_regions["honey/sec"][2]+graph_regions["honey/sec"][4]+20, graph_regions["honey/sec"][1]+graph_regions["honey/sec"][3]*(A_Index-1)//60, graph_regions["honey/sec"][2]+graph_regions["honey/sec"][4]+20+n)
 	Gdip_DrawLine(G, pPen, graph_regions["backpack"][1]+graph_regions["backpack"][3]*(A_Index-1)//60, graph_regions["backpack"][2]+graph_regions["backpack"][4]+20, graph_regions["backpack"][1]+graph_regions["backpack"][3]*(A_Index-1)//60, graph_regions["backpack"][2]+graph_regions["backpack"][4]+20+n)
-	Gdip_DrawLine(G, pPen, graph_regions["boost"][1]+graph_regions["boost"][3]*(A_Index-1)//60, regions["buffs"][2]+regions["buffs"][4]-125, graph_regions["boost"][1]+graph_regions["boost"][3]*(A_Index-1)//60, regions["buffs"][2]+regions["buffs"][4]-125+n)
+	if graph_regions.Has("boost")
+		Gdip_DrawLine(G, pPen, graph_regions["boost"][1]+graph_regions["boost"][3]*(A_Index-1)//60, regions["buffs"][2]+regions["buffs"][4]-125, graph_regions["boost"][1]+graph_regions["boost"][3]*(A_Index-1)//60, regions["buffs"][2]+regions["buffs"][4]-125+n)
 
 	if (Mod(A_Index, 10) = 1)
 	{
@@ -324,6 +310,8 @@ for k,v in graph_regions
 			: (k = "blueflowerfieldboost") ? "Blue"
 			: (k = "snowflakebuff") ? "Snow"
 			: (k = "cloudbuff") ? "Cloud"
+			: (k = "digitalcorruption") ? "Digital"
+			: (k = "StickerStack") ? "Stack"
 			: (k = "beesmascheer") ? "Cheer"
 			: ""
 		(label != "") && Gdip_TextToGraphics(G, label, "s26 Center Bold c" smTextPrimary " x" regions["buffs"][1]+28 " y" v[2]+v[4]//2-18 " w205", "Segoe UI")
@@ -566,8 +554,13 @@ DetectBuffs()
 	pBMArea := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")
 
 	; basic on/off
-for v in ["jbshare","babylove","festivemark","guiding","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff","beesmascheer"]
-	buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , 30, , , InStr(v, "mark") ? 6 : (v = "guiding" || v = "pinetreefieldboost" || v = "bamboofieldboost" || v = "blueflowerfieldboost" || v = "beesmascheer") ? 10 : 0, , 7) = 1)
+	for v in ["jbshare","babylove","festivemark","guiding","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff","digitalcorruption","beesmascheer"]
+	{
+		if (v = "digitalcorruption")
+			buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , , , , 30) = 1)
+		else
+			buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , 30, , , InStr(v, "mark") ? 6 : (v = "guiding" || v = "pinetreefieldboost" || v = "bamboofieldboost" || v = "blueflowerfieldboost" || v = "beesmascheer") ? 10 : 0, , 7) = 1)
+	}
 
 	; bear morphs
 	buff_values["bear"][i] := 0
@@ -873,6 +866,7 @@ SendHourlyReport(previewOutputPath := "")
 {
 	global pBM, regions, stat_regions, honey_values, honey_12h, backpack_values, buff_values, buff_colors, status_changes, start_time, start_honey, stats, latest_boost, latest_winds, graph_regions, version, natro_version, os_version, bitmaps, ocr_enabled, ocr_language
 	static honey_average := 0, honey_earned := 0, convert_time := 0, gather_time := 0, other_time := 0, stats_old := [["Total Boss Kills",0],["Total Vic Kills",0],["Total Bug Kills",0],["Total Planters",0],["Quests Done",0],["Disconnects",0]]
+	theme := StatMonitorTheme_Load()
 
 	if (honey_values.Count > 0)
 	{
@@ -983,9 +977,9 @@ SendHourlyReport(previewOutputPath := "")
 				points.Push([4+m*v[3]/3600, 4+v[4]-(honey_gradients[(m+30)//60]+((m+30)/60-(m+30)//60)*(honey_gradients[(m+30)//60+1]-honey_gradients[(m+30)//60])-min_gradient)/range_gradient*v[4]])
 				points.Push([4+m*v[3]/3600, 4+v[4]])
 
-				color := (j = 1) ? 0xffa6ff7c
-						: (j = 2) ? 0xfffeca40
-						: 0xff859aad
+				color := (j = 1) ? theme["HoneyGatherColor"]
+						: (j = 2) ? theme["HoneyConvertColor"]
+						: theme["HoneyOtherColor"]
 
 				pBrush := Gdip_BrushCreateSolid(color - 0x80000000)
 				Gdip_FillPolygon(G_Graph, pBrush, points)
@@ -1016,9 +1010,9 @@ SendHourlyReport(previewOutputPath := "")
 				points.Push([4+m*v[3]/3600, 4+v[4]-(honey_values[m//60]+(m/60-m//60)*(honey_values[m//60+1]-honey_values[m//60])-min_value)/range_value*v[4]])
 				points.Push([4+m*v[3]/3600, 4+v[4]])
 
-				color := (j = 1) ? 0xffa6ff7c
-						: (j = 2) ? 0xfffeca40
-						: 0xff859aad
+				color := (j = 1) ? theme["HoneyGatherColor"]
+						: (j = 2) ? theme["HoneyConvertColor"]
+						: theme["HoneyOtherColor"]
 
 				pBrush := Gdip_BrushCreateSolid(color - 0x80000000)
 				Gdip_FillPolygon(G_Graph, pBrush, points)
@@ -1045,7 +1039,7 @@ SendHourlyReport(previewOutputPath := "")
 					(y != "") && points.Push([4+v[3]*(max_x := x)/180, 4+v[4]-((y-min_12h)/range_12h)*v[4]])
 				points.Push([4+v[3]*max_x/180, 4+v[4]])
 			}
-			color := 0xff0e8bf0
+			color := theme["HoneyGatherColor"]
 
 			if (points.Length > 2)
 			{
@@ -1078,9 +1072,9 @@ SendHourlyReport(previewOutputPath := "")
 			if (points.Length > 2)
 			{
 				pBrush := Gdip_CreateLinearGrBrushFromRect(4, 4, v[3], v[4], 0x00000000, 0x00000000)
-				Gdip_SetLinearGrBrushPresetBlend(pBrush, [0.0, 0.2, 0.8], [0xffff0000, 0xffff8000, 0xff41ff80])
+				Gdip_SetLinearGrBrushPresetBlend(pBrush, [0.0, 0.2, 0.8], [theme["BackpackColorStart"], theme["BackpackColorMid"], theme["BackpackColorEnd"]])
 				pPen := Gdip_CreatePenFromBrush(pBrush, 6)
-				Gdip_SetLinearGrBrushPresetBlend(pBrush, [0.0, 0.2, 0.8], [0x80ff0000, 0x80ff8000, 0x8041ff80])
+				Gdip_SetLinearGrBrushPresetBlend(pBrush, [0.0, 0.2, 0.8], [StatMonitorTheme_ReplaceAlpha(theme["BackpackColorStart"], 0x80), StatMonitorTheme_ReplaceAlpha(theme["BackpackColorMid"], 0x80), StatMonitorTheme_ReplaceAlpha(theme["BackpackColorEnd"], 0x80)])
 				Gdip_FillPolygon(G_Graph, pBrush, points)
 				points.RemoveAt(1), points.Pop()
 				Gdip_DrawLines(G_Graph, pPen, points)
@@ -1117,9 +1111,10 @@ SendHourlyReport(previewOutputPath := "")
 					}
 				}
 
-				color := (i = "whiteboost") ? 0xffffffff
-					: (i = "redboost") ? 0xffe46156
-					: 0xff56a4e4
+				baseColor := StatMonitorTheme_GraphColor("boost", 0xff56a4e4)
+				color := (i = "whiteboost") ? StatMonitorTheme_MixColor(baseColor, 0xffffffff, 0.75)
+					: (i = "redboost") ? StatMonitorTheme_MixColor(baseColor, 0xffe46156, 0.6)
+					: StatMonitorTheme_MixColor(baseColor, 0xff56a4e4, 0.6)
 
 				pBrush := Gdip_BrushCreateSolid(color), Gdip_TextToGraphics(G, "x" . (count ? Round(total/count, 3) : "0.000"), "s32 Center Bold c" pBrush " x" v[1]-190 " y" v[2]+(72-36*A_Index), "Segoe UI"), Gdip_DeleteBrush(pBrush)
 
@@ -1150,9 +1145,9 @@ SendHourlyReport(previewOutputPath := "")
 
 
 			case "honeymark","pollenmark","precisemark":
-			color := (k = "honeymark") ? 0xffffd119
-				: (k = "pollenmark") ? 0xffffe994
-				: 0xff8f4eb4
+			color := (k = "honeymark") ? StatMonitorTheme_GraphColor("honeymark", 0xffffd119)
+				: (k = "pollenmark") ? StatMonitorTheme_GraphColor("pollenmark", 0xffffe994)
+				: StatMonitorTheme_GraphColor("precisemark", 0xff8f4eb4)
 
 			pBrush := Gdip_BrushCreateSolid(color-0x60000000)
 			for x,y in buff_values[k]
@@ -1160,20 +1155,22 @@ SendHourlyReport(previewOutputPath := "")
 			Gdip_DeleteBrush(pBrush)
 
 
-			case "festivemark","popstar","melody","bear","babylove","jbshare","guiding","beesmascheer","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff":
-			color := (k = "festivemark") ? 0xffc84335
-				: (k = "popstar") ? 0xff0096ff
-				: (k = "melody") ? 0xfff0f0f0
-				: (k = "bear") ? 0xffb26f3e
-				: (k = "babylove") ? 0xff8de4f3
-				: (k = "jbshare") ? 0xfff9ccff
-				: (k = "guiding") ? 0xffffef8e
-				: (k = "beesmascheer") ? 0xff00ff00
-				: (k = "pinetreefieldboost") ? 0xff00e027
-				: (k = "bamboofieldboost") ? 0xff00e027
-				: (k = "blueflowerfieldboost") ? 0xff00e027
-				: (k = "cloudbuff") ? 0xffd8e1ea
-				: 0xfffcfcfc
+			case "festivemark","popstar","melody","bear","babylove","jbshare","guiding","beesmascheer","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff","digitalcorruption","StickerStack":
+			color := (k = "festivemark") ? StatMonitorTheme_GraphColor("festivemark", 0xffc84335)
+				: (k = "popstar") ? StatMonitorTheme_GraphColor("popstar", 0xff0096ff)
+				: (k = "melody") ? StatMonitorTheme_GraphColor("melody", 0xfff0f0f0)
+				: (k = "bear") ? StatMonitorTheme_GraphColor("bear", 0xffb26f3e)
+				: (k = "babylove") ? StatMonitorTheme_GraphColor("babylove", 0xff8de4f3)
+				: (k = "jbshare") ? StatMonitorTheme_GraphColor("jbshare", 0xfff9ccff)
+				: (k = "guiding") ? StatMonitorTheme_GraphColor("guiding", 0xffffef8e)
+				: (k = "beesmascheer") ? StatMonitorTheme_GraphColor("beesmascheer", 0xff00ff00)
+				: (k = "pinetreefieldboost") ? StatMonitorTheme_GraphColor("pinetreefieldboost", 0xff00e027)
+				: (k = "bamboofieldboost") ? StatMonitorTheme_GraphColor("bamboofieldboost", 0xff00e027)
+				: (k = "blueflowerfieldboost") ? StatMonitorTheme_GraphColor("blueflowerfieldboost", 0xff00e027)
+				: (k = "digitalcorruption") ? StatMonitorTheme_GraphColor("digitalcorruption", 0xff7352ba)
+				: (k = "StickerStack") ? StatMonitorTheme_GraphColor("StickerStack", 0xffffffff)
+				: (k = "cloudbuff") ? StatMonitorTheme_GraphColor("cloudbuff", 0xffd8e1ea)
+				: StatMonitorTheme_GraphColor("snowflakebuff", 0xfffcfcfc)
 
 			pBrush := Gdip_BrushCreateSolid(color-0x60000000)
 			enum := buff_values[k].__Enum()
@@ -1211,13 +1208,13 @@ SendHourlyReport(previewOutputPath := "")
 				}
 			}
 
-			color := (k = "focus") ? 0xff22ff06
-				: (k = "haste") ? 0xfff0f0f0
-				: (k = "bombcombo") ? 0xffa0a0a0
-				: (k = "balloonaura") ? 0xff3350c3
-				: (k = "inspire") ? 0xfff4ef14
-				: (k = "precision") ? 0xff8f4eb4
-				: (k = "reindeerfetch") ? 0xffcc2c2c : 0
+			color := (k = "focus") ? StatMonitorTheme_GraphColor("focus", 0xff22ff06)
+				: (k = "haste") ? StatMonitorTheme_GraphColor("haste", 0xfff0f0f0)
+				: (k = "bombcombo") ? StatMonitorTheme_GraphColor("bombcombo", 0xffa0a0a0)
+				: (k = "balloonaura") ? StatMonitorTheme_GraphColor("balloonaura", 0xff3350c3)
+				: (k = "inspire") ? StatMonitorTheme_GraphColor("inspire", 0xfff4ef14)
+				: (k = "precision") ? StatMonitorTheme_GraphColor("precision", 0xff8f4eb4)
+				: (k = "reindeerfetch") ? StatMonitorTheme_GraphColor("reindeerfetch", 0xffcc2c2c) : 0
 
 			pBrush := Gdip_BrushCreateSolid(color), Gdip_TextToGraphics(G, "x" . (count ? Round(total/count, 3) : "0.000"), "s32 Center Bold c" pBrush " x" v[1]-190 " y" v[2]+36, "Segoe UI"), Gdip_DeleteBrush(pBrush)
 
@@ -1321,9 +1318,9 @@ SendHourlyReport(previewOutputPath := "")
 	angle := -90
 	for i,j in status_list
 	{
-		color := (j = "Gather") ? 0xffa6ff7c
-				: (j = "Convert") ? 0xfffeca40
-				: 0xff859aad
+				color := (j = "Gather") ? theme["PieGatherColor"]
+						: (j = "Convert") ? theme["PieConvertColor"]
+						: theme["PieOtherColor"]
 		pBrush := Gdip_BrushCreateSolid(color)
 		Gdip_FillPie(G, pBrush, stat_regions["lasthour"][1]+stat_regions["lasthour"][3]//2-464, stat_regions["lasthour"][2]+318, 280, 280, angle, hour_%j%_time/10)
 		angle += hour_%j%_time/10
@@ -1352,9 +1349,9 @@ SendHourlyReport(previewOutputPath := "")
 	angle := -90
 	for i,j in status_list
 	{
-		color := (j = "Gather") ? 0xffa6ff7c
-				: (j = "Convert") ? 0xfffeca40
-				: 0xff859aad
+				color := (j = "Gather") ? theme["PieGatherColor"]
+						: (j = "Convert") ? theme["PieConvertColor"]
+						: theme["PieOtherColor"]
 		pBrush := Gdip_BrushCreateSolid(color)
 		Gdip_FillPie(G, pBrush, stat_regions["session"][1]+stat_regions["session"][3]//2-464, stat_regions["session"][2]+402, 280, 280, angle, %j%_time/session_time*360)
 		angle += %j%_time/session_time*360
@@ -1758,6 +1755,11 @@ SendHourlyReport(previewOutputPath := "")
 	; reset buff values array
 	for k,v in buff_values
 		v.Clear()
+	for field, buffMap in future_buff_values {
+		for idx, val in buffMap
+			buff_values[field][idx] := val
+		buffMap.Clear()
+	}
 }
 
 StatMonitor_CreateHourlyAttachmentStream(pBitmap, &attachmentName, &attachmentContentType, &attachmentSize, &pngSize) {
@@ -1850,6 +1852,29 @@ SetAbility(wParam, lParam, *){
 	static arr := ["popstar"]
 	time_value := (60*A_Min+A_Sec)//6, i := (time_value = 0) ? 600 : time_value
 	buff_values[arr[wParam]][i] := lParam
+	return 0
+}
+
+BuffActivated(wParam, lParam := 150, *) {
+	static buffs := ["PineTree", "Bamboo", "BlueFlower", "Stump", "Rose", "Strawberry", "Mushroom", "Pepper", "Cactus", "Pumpkin", "Pineapple", "Spider", "Clover", "Dandelion", "Sunflower", "Coconut", "StickerStack"]
+
+	if !IsInteger(wParam) || (wParam < 1) || (wParam > buffs.Length)
+		return 0
+
+	buff := buffs[wParam]
+	duration := Max(1, Integer(lParam))
+	time_value := (60*A_Min+A_Sec)//6
+	i := (time_value = 0) ? 600 : time_value
+	remainder := Max(0, i + duration - 600)
+	endI := Min(i + duration + 1, 600)
+
+	if remainder > 0 {
+		future_buff_values[buff][1] := 1
+		future_buff_values[buff][remainder + 1] := 0
+	}
+
+	buff_values[buff][i] := 1
+	buff_values[buff][endI] := (endI = 600) ? 1 : 0
 	return 0
 }
 
@@ -2082,5 +2107,3 @@ Send_WM_COPYDATA(StringToSend, TargetScriptTitle, wParam:=0)
 	DetectHiddenWindows 0
 	return IsSet(ret) ? ret : 0
 }
-
-

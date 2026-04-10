@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 ; Made by @definetlynotray on discord
 
@@ -10,6 +10,10 @@ global SMThemeLegacyConfigPath := SMThemeSettingsDir "\nm_config.ini"
 global SMThemeSection := "StatMonitorTheme"
 global SMThemeDefaults := StatMonitorThemeEditor_Defaults()
 global SMThemeControls := Map()
+global SMThemeBuffGraphDefs := StatMonitorThemeEditor_BuffGraphSpecs()
+global SMThemeBuffGraphState := Map()
+global SMThemeBuffGraphLabelToId := Map()
+global SMThemeBuffGraphSelectedId := ""
 global SMThemeMockState := Map("Running", false, "Pid", 0, "TempScriptPath", "")
 global SMThemeGui := Gui("+Resize +MinSize620x730", "StatMonitor Theme Editor")
 SMThemeGui.Opt("+OwnDialogs")
@@ -23,9 +27,10 @@ return
 StatMonitorThemeEditor_BuildGui(values) {
 	global SMThemeGui
 	; Made by @definetlynotray on discord - theme editor surface
+	StatMonitorThemeEditor_BuffGraphBuildState(values)
 	SMThemeGui.SetFont("s9", "Segoe UI")
 	SMThemeGui.Add("Text", "x12 y12 w590", "Customize StatMonitor's background image and colors. Saved changes apply the next time StatMonitor starts.")
-	tabs := SMThemeGui.Add("Tab3", "x12 y40 w592 h618", ["Style", "Images"])
+	tabs := SMThemeGui.Add("Tab3", "x12 y40 w592 h618", ["Style", "Graphs", "Images"])
 
 	tabs.UseTab("Style")
 	SMThemeGui.Add("GroupBox", "x24 y78 w568 h132", "Background")
@@ -58,6 +63,39 @@ StatMonitorThemeEditor_BuildGui(values) {
 	StatMonitorThemeEditor_AddColorField(320, 504, "Success", "TextPositive", values["TextPositive"])
 	StatMonitorThemeEditor_AddColorField(40, 538, "Danger", "TextNegative", values["TextNegative"])
 	StatMonitorThemeEditor_AddColorField(320, 538, "Brand", "TextBrand", values["TextBrand"])
+
+	tabs.UseTab("Graphs")
+	SMThemeGui.Add("GroupBox", "x24 y78 w568 h238", "Buff Graphs")
+	SMThemeGui.Add("Text", "x40 y112 w88", "Graph")
+	graphItems := []
+	for _, spec in SMThemeBuffGraphDefs {
+		graphItems.Push(spec[2])
+	}
+	SMThemeControls["BuffGraphSelect"] := SMThemeGui.Add("DropDownList", "x136 y106 w224", graphItems)
+	SMThemeControls["BuffGraphSelect"].OnEvent("Change", StatMonitorThemeEditor_BuffGraphSwitchSelection)
+	SMThemeGui.Add("Text", "x40 y152 w88", "Enabled")
+	SMThemeControls["BuffGraphEnabled"] := SMThemeGui.Add("CheckBox", "x136 y150 w96", "Show graph")
+	StatMonitorThemeEditor_AddColorField(40, 180, "Color", "BuffGraphColor", "FFFFFFFF")
+	SMThemeGui.Add("Text", "x40 y216 w88", "Order")
+	SMThemeControls["BuffGraphOrder"] := SMThemeGui.Add("Edit", "x136 y212 w72 Number Limit3", "1")
+	SMThemeGui.Add("Text", "x248 y216 w88", "Y Offset")
+	SMThemeControls["BuffGraphOffsetY"] := SMThemeGui.Add("Edit", "x344 y212 w72 Number Limit4", "0")
+	SMThemeGui.Add("Text", "x40 y252 w520 c666666", "Order controls the stack position. Y Offset nudges the selected graph after the stack auto-reflows, so disabling a graph closes the gap above it.")
+
+	SMThemeGui.Add("GroupBox", "x24 y318 w568 h176", "Honey / Backpack Colors")
+	StatMonitorThemeEditor_AddColorField(40, 352, "Honey Gather", "HoneyGatherColor", values["HoneyGatherColor"])
+	StatMonitorThemeEditor_AddColorField(320, 352, "Honey Convert", "HoneyConvertColor", values["HoneyConvertColor"])
+	StatMonitorThemeEditor_AddColorField(40, 386, "Honey Other", "HoneyOtherColor", values["HoneyOtherColor"])
+	StatMonitorThemeEditor_AddColorField(320, 386, "Backpack Start", "BackpackColorStart", values["BackpackColorStart"])
+	StatMonitorThemeEditor_AddColorField(40, 420, "Backpack Mid", "BackpackColorMid", values["BackpackColorMid"])
+	StatMonitorThemeEditor_AddColorField(320, 420, "Backpack End", "BackpackColorEnd", values["BackpackColorEnd"])
+	SMThemeGui.Add("Text", "x40 y456 w520 c666666", "Honey uses its own gather / convert / other palette. Backpack uses a three-stop gradient for the fill and line.")
+
+	SMThemeGui.Add("GroupBox", "x24 y502 w568 h132", "Pie Chart Colors")
+	StatMonitorThemeEditor_AddColorField(40, 536, "Gather", "PieGatherColor", values["PieGatherColor"])
+	StatMonitorThemeEditor_AddColorField(320, 536, "Convert", "PieConvertColor", values["PieConvertColor"])
+	StatMonitorThemeEditor_AddColorField(40, 570, "Other", "PieOtherColor", values["PieOtherColor"])
+	SMThemeGui.Add("Text", "x40 y608 w520 c666666", "These colors control both the last-hour and session pie charts.")
 
 	tabs.UseTab("Images")
 	SMThemeGui.Add("GroupBox", "x24 y78 w568 h220", "Theme Image")
@@ -126,6 +164,8 @@ StatMonitorThemeEditor_BuildGui(values) {
 	exportButton.OnEvent("Click", StatMonitorThemeEditor_Export)
 	resetButton.OnEvent("Click", StatMonitorThemeEditor_ResetDefaults)
 	closeButton.OnEvent("Click", (*) => ExitApp())
+
+	StatMonitorThemeEditor_BuffGraphLoadSelected()
 }
 
 StatMonitorThemeEditor_AddDropDown(x, y, labelText, key, items, value, width := 120) {
@@ -143,6 +183,128 @@ StatMonitorThemeEditor_AddColorField(x, y, labelText, key, value) {
 	SMThemeControls[key] := SMThemeGui.Add("Edit", Format("x{} y{} w96 Uppercase", x + 96, y), value)
 	pickButton := SMThemeGui.Add("Button", Format("x{} y{} w48", x + 198, y - 1), "Pick")
 	pickButton.OnEvent("Click", (*) => StatMonitorThemeEditor_PickColor(key))
+}
+
+StatMonitorThemeEditor_CustomGraphColorDefaults() {
+	defaults := Map()
+	defaults.CaseSense := 0
+	defaults["HoneyGatherColor"] := "FFA6FF7C"
+	defaults["HoneyConvertColor"] := "FFFECA40"
+	defaults["HoneyOtherColor"] := "FF859AAD"
+	defaults["BackpackColorStart"] := "FFFF0000"
+	defaults["BackpackColorMid"] := "FFFF8000"
+	defaults["BackpackColorEnd"] := "FF41FF80"
+	defaults["PieGatherColor"] := "FFA6FF7C"
+	defaults["PieConvertColor"] := "FFFECA40"
+	defaults["PieOtherColor"] := "FF859AAD"
+	return defaults
+}
+
+StatMonitorThemeEditor_BuffGraphKey(id, field) {
+	return "BuffGraph_" id "_" field
+}
+
+StatMonitorThemeEditor_BuffGraphSpecs() {
+	return [
+		["boost", "Boost", 280, 0xff56a4e4, 1]
+		, ["haste", "Haste", 280, 0xfff0f0f0, 2]
+		, ["focus", "Focus", 280, 0xff22ff06, 3]
+		, ["bombcombo", "Bomb Combo", 280, 0xffa0a0a0, 4]
+		, ["balloonaura", "Balloon Aura", 280, 0xff3350c3, 5]
+		, ["inspire", "Inspire", 280, 0xfff4ef14, 6]
+		, ["reindeerfetch", "Reindeer Fetch", 280, 0xffcc2c2c, 7]
+		, ["honeymark", "Honey Mark", 120, 0xffffd119, 8]
+		, ["pollenmark", "Pollen Mark", 120, 0xffffe994, 9]
+		, ["festivemark", "Festive Mark", 120, 0xffc84335, 10]
+		, ["popstar", "Pop Star", 110, 0xff0096ff, 11]
+		, ["melody", "Melody", 110, 0xfff0f0f0, 12]
+		, ["bear", "Bear Morph", 110, 0xffb26f3e, 13]
+		, ["babylove", "Baby Love", 110, 0xff8de4f3, 14]
+		, ["jbshare", "JB Share", 110, 0xfff9ccff, 15]
+		, ["guiding", "Guiding Star", 110, 0xffffef8e, 16]
+		, ["beesmascheer", "Beesmas Cheer", 110, 0xff00ff00, 17]
+		, ["pinetreefieldboost", "Pine Field Boost", 110, 0xff00e027, 18]
+		, ["bamboofieldboost", "Bamboo Field Boost", 110, 0xff00e027, 19]
+		, ["blueflowerfieldboost", "Blue Flower Field Boost", 110, 0xff00e027, 20]
+		, ["snowflakebuff", "Snowflake Buff", 110, 0xfffcfcfc, 21]
+		, ["cloudbuff", "Cloud Buff", 110, 0xffd8e1ea, 22]
+		, ["digitalcorruption", "Digital Corruption", 110, 0xff7352ba, 23]
+		, ["StickerStack", "Sticker Stack", 110, 0xffffffff, 24]
+	]
+}
+
+StatMonitorThemeEditor_BuffGraphBuildState(values) {
+	global SMThemeBuffGraphDefs, SMThemeBuffGraphState, SMThemeBuffGraphLabelToId, SMThemeBuffGraphSelectedId
+	SMThemeBuffGraphState := Map()
+	SMThemeBuffGraphState.CaseSense := 0
+	SMThemeBuffGraphLabelToId := Map()
+	SMThemeBuffGraphLabelToId.CaseSense := 0
+	for _, spec in SMThemeBuffGraphDefs {
+		id := spec[1]
+		label := spec[2]
+		SMThemeBuffGraphLabelToId[label] := id
+		state := Map()
+		state.CaseSense := 0
+		state["Enabled"] := values.Has(StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")) ? values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")] : "1"
+		state["Order"] := values.Has(StatMonitorThemeEditor_BuffGraphKey(id, "Order")) ? values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")] : spec[5]
+		state["Color"] := values.Has(StatMonitorThemeEditor_BuffGraphKey(id, "Color")) ? values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")] : Format("{:08X}", spec[4] & 0xffffffff)
+		state["OffsetY"] := values.Has(StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")) ? values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")] : "0"
+		SMThemeBuffGraphState[id] := state
+	}
+	if (SMThemeBuffGraphSelectedId = "") && (SMThemeBuffGraphDefs.Length > 0)
+		SMThemeBuffGraphSelectedId := SMThemeBuffGraphDefs[1][1]
+}
+
+StatMonitorThemeEditor_BuffGraphSaveCurrent(*) {
+	global SMThemeControls, SMThemeBuffGraphState, SMThemeBuffGraphSelectedId, SMThemeBuffGraphDefs
+	if (SMThemeBuffGraphSelectedId = "")
+		return
+	state := SMThemeBuffGraphState[SMThemeBuffGraphSelectedId]
+	state["Enabled"] := SMThemeControls["BuffGraphEnabled"].Value ? "1" : "0"
+	state["Order"] := String(StatMonitorThemeEditor_ClampInteger(SMThemeControls["BuffGraphOrder"].Value, 1, 1, 999))
+	state["Color"] := StatMonitorThemeEditor_NormalizeColorText(SMThemeControls["BuffGraphColor"].Value, state["Color"])
+	state["OffsetY"] := String(StatMonitorThemeEditor_ClampInteger(SMThemeControls["BuffGraphOffsetY"].Value, 0, -9999, 9999))
+	SMThemeBuffGraphState[SMThemeBuffGraphSelectedId] := state
+}
+
+StatMonitorThemeEditor_BuffGraphLoadSelected(*) {
+	global SMThemeControls, SMThemeBuffGraphState, SMThemeBuffGraphSelectedId
+	if (SMThemeBuffGraphSelectedId = "")
+		return
+	state := SMThemeBuffGraphState[SMThemeBuffGraphSelectedId]
+	if !IsObject(state)
+		return
+	SMThemeControls["BuffGraphEnabled"].Value := (state["Enabled"] = "1")
+	SMThemeControls["BuffGraphOrder"].Value := state["Order"]
+	SMThemeControls["BuffGraphColor"].Value := state["Color"]
+	SMThemeControls["BuffGraphOffsetY"].Value := state["OffsetY"]
+}
+
+StatMonitorThemeEditor_BuffGraphLabel(id) {
+	global SMThemeBuffGraphDefs
+	for _, spec in SMThemeBuffGraphDefs
+		if (spec[1] = id)
+			return spec[2]
+	return id
+}
+
+StatMonitorThemeEditor_BuffGraphSwitchSelection(*) {
+	global SMThemeControls, SMThemeBuffGraphLabelToId, SMThemeBuffGraphSelectedId
+	StatMonitorThemeEditor_BuffGraphSaveCurrent()
+	label := SMThemeControls["BuffGraphSelect"].Text
+	if (label = "")
+		return
+	if !SMThemeBuffGraphLabelToId.Has(label)
+		return
+	SMThemeBuffGraphSelectedId := SMThemeBuffGraphLabelToId[label]
+	StatMonitorThemeEditor_BuffGraphLoadSelected()
+}
+
+StatMonitorThemeEditor_BuffGraphResetState(values) {
+	global SMThemeBuffGraphSelectedId
+	StatMonitorThemeEditor_BuffGraphBuildState(values)
+	if (SMThemeBuffGraphSelectedId != "")
+		StatMonitorThemeEditor_BuffGraphLoadSelected()
 }
 
 
@@ -175,7 +337,10 @@ StatMonitorThemeEditor_BrowseStatsImage(*) {
 
 StatMonitorThemeEditor_PickColor(key) {
 	global SMThemeControls, SMThemeDefaults, SMThemeGui
-	current := StatMonitorThemeEditor_ParseColor(SMThemeControls[key].Value, StatMonitorThemeEditor_ParseColor(SMThemeDefaults[key], 0xff000000))
+	if !SMThemeControls.Has(key)
+		return
+	fallback := SMThemeDefaults.Has(key) ? SMThemeDefaults[key] : "FF000000"
+	current := StatMonitorThemeEditor_ParseColor(SMThemeControls[key].Value, StatMonitorThemeEditor_ParseColor(fallback, 0xff000000))
 	alpha := (current >> 24) & 0xff
 	rgb := current & 0xffffff
 	picked := StatMonitorThemeEditor_ChooseRgbColor(rgb, SMThemeGui.Hwnd)
@@ -309,11 +474,12 @@ StatMonitorThemeEditor_ResetDefaults(*) {
 	for key, value in defaults {
 		if !SMThemeControls.Has(key)
 			continue
-		if (key = "BackgroundMode" || key = "ImageLayer" || key = "ImageFit" || key = "InfoImageMode" || key = "InfoImageFit")
+		if (key = "BackgroundMode" || key = "ImageLayer" || key = "ImageFit" || key = "InfoImageMode" || key = "InfoImageFit" || key = "StatsImageMode" || key = "StatsImageFit")
 			SMThemeControls[key].Text := value
 		else
 			SMThemeControls[key].Value := value
 	}
+	StatMonitorThemeEditor_BuffGraphResetState(defaults)
 }
 
 StatMonitorThemeEditor_CollectValues(validatePaths := true) {
@@ -342,6 +508,8 @@ StatMonitorThemeEditor_CollectValues(validatePaths := true) {
 	values["TextPositive"] := StatMonitorThemeEditor_NormalizeColorText(SMThemeControls["TextPositive"].Value, SMThemeDefaults["TextPositive"])
 	values["TextNegative"] := StatMonitorThemeEditor_NormalizeColorText(SMThemeControls["TextNegative"].Value, SMThemeDefaults["TextNegative"])
 	values["TextBrand"] := StatMonitorThemeEditor_NormalizeColorText(SMThemeControls["TextBrand"].Value, SMThemeDefaults["TextBrand"])
+	for key, defaultColor in StatMonitorThemeEditor_CustomGraphColorDefaults()
+		values[key] := StatMonitorThemeEditor_NormalizeColorText(SMThemeControls[key].Value, SMThemeDefaults[key])
 
 	imagePath := Trim(SMThemeControls["ImagePath"].Value, ' "')
 	if (validatePaths && (imagePath != "") && !FileExist(imagePath)) {
@@ -374,6 +542,16 @@ StatMonitorThemeEditor_CollectValues(validatePaths := true) {
 	values["StatsImageMode"] := StatMonitorThemeEditor_NormalizeStatsImageMode(SMThemeControls["StatsImageMode"].Text)
 	values["StatsImageOpacity"] := StatMonitorThemeEditor_ClampInteger(SMThemeControls["StatsImageOpacity"].Value, 100, 0, 100)
 	values["StatsImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(SMThemeControls["StatsImageFit"].Text)
+	for key, defaultColor in StatMonitorThemeEditor_CustomGraphColorDefaults()
+		values[key] := StatMonitorThemeEditor_NormalizeColorText(values[key], SMThemeDefaults[key])
+	StatMonitorThemeEditor_BuffGraphSaveCurrent()
+	for _, spec in SMThemeBuffGraphDefs {
+		id := spec[1]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")] := SMThemeBuffGraphState[id]["Enabled"]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")] := SMThemeBuffGraphState[id]["Order"]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")] := SMThemeBuffGraphState[id]["Color"]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")] := SMThemeBuffGraphState[id]["OffsetY"]
+	}
 	return values
 }
 
@@ -390,6 +568,10 @@ StatMonitorThemeEditor_Load() {
 	values["ImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(values["ImageFit"])
 	values["InfoImageMode"] := StatMonitorThemeEditor_NormalizeInfoImageMode(values["InfoImageMode"])
 	values["InfoImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(values["InfoImageFit"])
+	values["StatsImageMode"] := StatMonitorThemeEditor_NormalizeStatsImageMode(values["StatsImageMode"])
+	values["StatsImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(values["StatsImageFit"])
+	for key, defaultColor in StatMonitorThemeEditor_CustomGraphColorDefaults()
+		values[key] := StatMonitorThemeEditor_NormalizeColorText(values[key], SMThemeDefaults[key])
 	for key in ["BackgroundFlat", "BackgroundGradientTop", "BackgroundGradientBottom", "RegionBorder", "RegionFill", "StatRegionBorder", "StatRegionFill", "GraphFill", "TextPrimary", "TextSecondary", "TextMuted", "TextAccent", "TextLink", "TextPositive", "TextNegative", "TextBrand"]
 		values[key] := StatMonitorThemeEditor_NormalizeColorText(values[key], SMThemeDefaults[key])
 
@@ -403,6 +585,13 @@ StatMonitorThemeEditor_Load() {
 	values["ImageOffsetY"] := String(StatMonitorThemeEditor_ClampInteger(values["ImageOffsetY"], 0, -6000, 6000))
 	values["InfoImageOpacity"] := String(StatMonitorThemeEditor_ClampInteger(values["InfoImageOpacity"], 100, 0, 100))
 	values["StatsImageOpacity"] := String(StatMonitorThemeEditor_ClampInteger(values["StatsImageOpacity"], 100, 0, 100))
+	for _, spec in SMThemeBuffGraphDefs {
+		id := spec[1]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")], 1, 0, 1))
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")], spec[5], 1, 999))
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")] := StatMonitorThemeEditor_NormalizeColorText(values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")], spec[4])
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")], 0, -9999, 9999))
+	}
 	values["ImagePath"] := Trim(values["ImagePath"], ' "')
 	values["InfoImagePath"] := Trim(values["InfoImagePath"], ' "')
 	values["StatsImagePath"] := Trim(values["StatsImagePath"], ' "')
@@ -430,6 +619,8 @@ StatMonitorThemeEditor_LoadFromFile(path) {
 	values["InfoImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(values["InfoImageFit"])
 	values["StatsImageMode"] := StatMonitorThemeEditor_NormalizeStatsImageMode(values["StatsImageMode"])
 	values["StatsImageFit"] := StatMonitorThemeEditor_NormalizeImageFit(values["StatsImageFit"])
+	for key, defaultColor in StatMonitorThemeEditor_CustomGraphColorDefaults()
+		values[key] := StatMonitorThemeEditor_NormalizeColorText(values[key], SMThemeDefaults[key])
 	for key in ["BackgroundFlat", "BackgroundGradientTop", "BackgroundGradientBottom", "RegionBorder", "RegionFill", "StatRegionBorder", "StatRegionFill", "GraphFill", "TextPrimary", "TextSecondary", "TextMuted", "TextAccent", "TextLink", "TextPositive", "TextNegative", "TextBrand"]
 		values[key] := StatMonitorThemeEditor_NormalizeColorText(values[key], SMThemeDefaults[key])
 
@@ -443,6 +634,13 @@ StatMonitorThemeEditor_LoadFromFile(path) {
 	values["ImageOffsetY"] := String(StatMonitorThemeEditor_ClampInteger(values["ImageOffsetY"], 0, -6000, 6000))
 	values["InfoImageOpacity"] := String(StatMonitorThemeEditor_ClampInteger(values["InfoImageOpacity"], 100, 0, 100))
 	values["StatsImageOpacity"] := String(StatMonitorThemeEditor_ClampInteger(values["StatsImageOpacity"], 100, 0, 100))
+	for _, spec in SMThemeBuffGraphDefs {
+		id := spec[1]
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")], 1, 0, 1))
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "Order")], spec[5], 1, 999))
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")] := StatMonitorThemeEditor_NormalizeColorText(values[StatMonitorThemeEditor_BuffGraphKey(id, "Color")], spec[4])
+		values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")] := String(StatMonitorThemeEditor_ClampInteger(values[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")], 0, -9999, 9999))
+	}
 	values["ImagePath"] := Trim(values["ImagePath"], ' "')
 	values["InfoImagePath"] := Trim(values["InfoImagePath"], ' "')
 	values["StatsImagePath"] := Trim(values["StatsImagePath"], ' "')
@@ -466,6 +664,7 @@ StatMonitorThemeEditor_ApplyValuesToControls(values) {
 		else
 			SMThemeControls[key].Value := value
 	}
+	StatMonitorThemeEditor_BuffGraphResetState(values)
 }
 
 StatMonitorThemeEditor_WriteValuesToFile(path, values) {
@@ -525,6 +724,15 @@ StatMonitorThemeEditor_Defaults() {
 	defaults["StatsImageMode"] := "Off"
 	defaults["StatsImageOpacity"] := "100"
 	defaults["StatsImageFit"] := "Contain"
+	for key, defaultColor in StatMonitorThemeEditor_CustomGraphColorDefaults()
+		defaults[key] := defaultColor
+	for _, spec in StatMonitorThemeEditor_BuffGraphSpecs() {
+		id := spec[1]
+		defaults[StatMonitorThemeEditor_BuffGraphKey(id, "Enabled")] := "1"
+		defaults[StatMonitorThemeEditor_BuffGraphKey(id, "Order")] := spec[5]
+		defaults[StatMonitorThemeEditor_BuffGraphKey(id, "Color")] := Format("{:08X}", spec[4] & 0xffffffff)
+		defaults[StatMonitorThemeEditor_BuffGraphKey(id, "OffsetY")] := "0"
+	}
 	return defaults
 }
 
@@ -534,7 +742,7 @@ StatMonitorThemeEditor_NormalizeColorText(value, fallback) {
 }
 
 StatMonitorThemeEditor_ParseColor(value, defaultColor) {
-	if IsNumber(value)
+	if !(value is String)
 		return Integer(value)
 
 	text := StrUpper(Trim(value))

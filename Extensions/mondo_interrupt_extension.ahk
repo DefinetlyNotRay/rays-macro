@@ -1,15 +1,15 @@
 #Requires AutoHotkey v2.0
 
 mondointerrupt_ShouldTrigger() {
-	global MondoInterruptCheck, MondoBuffCheck, MondoAction, LastMondoBuff
+	global MondoInterruptCheck, MondoBuffCheck, MondoAction, LastMondoBuff, state
 
 	if !(MondoInterruptCheck = 1 && MondoBuffCheck = 1 && MondoAction = "Buff")
 		return false
-	if nm_GatherBoostInterrupt()
-		return false
 
 	utcMin := FormatTime(A_NowUTC, "m") + 0
-	return (utcMin = 59) && ((nowUnix() - LastMondoBuff) > 3300)
+	; leave gather at :59, but only allow the late catch-up window once we are no longer gathering
+	isLateCatchup := (utcMin >= 0 && utcMin <= 14) && (state != "Gathering") && (state != "Searching")
+	return ((utcMin = 59) || isLateCatchup) && ((nowUnix() - LastMondoBuff) > 3300)
 }
 
 mondointerrupt_IsSpawnDetected(&healthBars := "") {
@@ -18,7 +18,6 @@ mondointerrupt_IsSpawnDetected(&healthBars := "") {
 		return false
 
 	for _, value in healthBars {
-		; Mondo should already have taken damage by the time we confirm it.
 		if (value != 100.00)
 			return true
 	}
@@ -44,10 +43,17 @@ mondointerrupt_Handle() {
 	nm_Reset(0, 2000, 0)
 	nm_gotoField("Mountain Top")
 
-	while ((FormatTime(A_NowUTC, "m") + 0) = 59) {
-		if youDied
-			break
-		Sleep 200
+	utcMin := FormatTime(A_NowUTC, "m") + 0
+	; if we caught a late start (not :59), skip the wait loop
+	if (utcMin != 59) {
+		; already past :59, go straight to detection
+	} else {
+		; arrived before :00, wait for the minute to flip
+		while ((FormatTime(A_NowUTC, "m") + 0) = 59) {
+			if youDied
+				break
+			Sleep 200
+		}
 	}
 
 	nm_setStatus("Detecting", "Mondo Interrupt")

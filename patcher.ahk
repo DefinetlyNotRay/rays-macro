@@ -224,6 +224,7 @@ workDir := A_ScriptDir
 assetsDir := workDir "\Assets"
 patchTemplateDir := workDir "\patch_templates"
 pineaFbAssetDir := assetsDir "\pine_afb"
+statMonitorAssetDir := assetsDir "\statmonitor"
 natroPath := workDir "\submacros\natro_macro.ahk"
 origNatPath := workDir "\submacros\natro_macro(Original Clean).ahk"
 statusPath := workDir "\submacros\Status.ahk"
@@ -259,6 +260,7 @@ enableRiskyCoreHooks := patchMondoHop
 
 DirCreate(assetsDir)
 DirCreate(pineaFbAssetDir)
+DirCreate(statMonitorAssetDir)
 FileAppend("✓ Ensured Assets folder exists`n", logFile)
 for _, pineFallbackAsset in ["pine trees 1.png", "pine trees 2.png", "pine trees 3.png"] {
     sourceAsset := pineaFbAssetDir "\" pineFallbackAsset
@@ -268,6 +270,16 @@ for _, pineFallbackAsset in ["pine trees 1.png", "pine trees 2.png", "pine trees
         FileCopy(sourceAsset, targetAsset, 1)
         FileAppend("✓ Copied Pine AFB fallback asset " pineFallbackAsset "`n", logFile)
     }
+}
+
+stickerStackSourceAsset := statMonitorAssetDir "\StickerStack.png"
+stickerStackTargetAsset := workDir "\nm_image_assets\statmonitor\StickerStack.png"
+if FileExist(stickerStackSourceAsset) {
+    DirCreate(workDir "\nm_image_assets\statmonitor")
+    FileCopy(stickerStackSourceAsset, stickerStackTargetAsset, 1)
+    FileAppend("✓ Copied StatMonitor StickerStack asset`n", logFile)
+} else {
+    FileAppend("! Missing Assets\\statmonitor\\StickerStack.png; continuing without Sticker Stack asset sync`n", logFile)
 }
 
 msg .= "Selected Modules:`n"
@@ -286,6 +298,12 @@ msg .= " - Auto Bitter: " (patchAutoBitter ? "ON" : "OFF") "`n`n"
 if FileExist(natroPath) {
     c := FileRead(natroPath, "UTF-8")
     orig := c
+
+    ; 0. Double Enter on reset for reliability
+    if !InStr(c, 'SC_Esc "}{" SC_R "}{" SC_Enter "}{" SC_Enter ') {
+        c := StrReplace(c, 'send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}', 'send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}{" SC_Enter "}')
+        FileAppend("✓ Added double Enter press on reset`n", logFile)
+    }
 
     if (patchTadSyncCore) {
         ; 1a. Restore Beesmas checkbox states when Beesmas controls are enabled
@@ -557,7 +575,9 @@ if FileExist(natroPath) {
         }
     }
     }
-    if (patchEnzymeBalloon) && !InStr(c, '"EnzymesBoostedOnly"') {
+    if (patchEnzymeBalloon) && !InStr(c, 'config["Extensions"]') {
+        ; handled later when the Extensions map shell is created
+    } else if (patchEnzymeBalloon) && !InStr(c, '"EnzymesBoostedOnly"') {
         enzymeConfigPattern := 'm)^(\s*, "LastHotkey7", [^\r\n]+)$'
         enzymeConfigReplacement := '$1`r`n`t`t, "EnzymesBoostedOnly", 1'
         cNew := RegExReplace(c, enzymeConfigPattern, enzymeConfigReplacement, &enzymeConfigCount, 1)
@@ -968,8 +988,12 @@ if FileExist(natroPath) {
         blueBoosterInterruptNeedle := ';stats/status'
         blueBoosterInterruptInsert := JoinLines(
             'nm_BlueBoosterInterrupt() {',
-            '`tglobal BlueBoosterInterruptCheck, LastBlueBoostUse',
+            '`tglobal BlueBoosterInterruptCheck, LastBlueBoostUse, BlueBoostCheck',
+            '`tif (ForceBlueBoosterInterrupt)',
+            '`t`treturn 1',
             '`tif (!BlueBoosterInterruptCheck)',
+            '`t`treturn 0',
+            '`tif (!BlueBoostCheck)',
             '`t`treturn 0',
             '',
             '`tlastUse := (LastBlueBoostUse = "" ? 0 : LastBlueBoostUse)',
@@ -1186,21 +1210,41 @@ if FileExist(natroPath) {
         goGatherHead := SubStr(c, goGatherPos, 800)
         if !InStr(goGatherHead, 'nm_HandleStickerStackInterrupt(1, 0, 1)') {
             preStackPattern := '(?m)(^\tif nm_MondoInterrupt\(\)\r?\n^\t\treturn\r?\n)(?!^\tif nm_HandleStickerStackInterrupt\(1, 0, 1\)\r?\n^\t\treturn)'
-            preStackInsert := '$1`tif nm_HandleStickerStackInterrupt(1, 0, 1)`r`n`t`treturn`r`n'
+            preStackInsert := '$1`tif mondointerrupt_ShouldTrigger() {`r`n`t`tmondointerrupt_Handle()`r`n`t`treturn`r`n`t}`r`n`tif nm_HandleStickerStackInterrupt(1, 0, 1)`r`n`t`treturn`r`n'
             cNew := RegExReplace(c, preStackPattern, preStackInsert, &preStackCount, 1)
             if (preStackCount > 0 && cNew != c) {
                 c := cNew
-                FileAppend("✓ Added immediate Sticker Stack handling in nm_GoGather()`n", logFile)
+                FileAppend("✓ Added immediate Mondo then Sticker Stack handling in nm_GoGather()`n", logFile)
             }
         }
     }
+    malformedGoGatherMondoStack := JoinLines(
+        '	if mondointerrupt_ShouldTrigger() {',
+        '		mondointerrupt_Handle()',
+        '		return',
+        '	if nm_HandleStickerStackInterrupt(1, 0, 1)',
+        '		return'
+    )
+    fixedGoGatherMondoStack := JoinLines(
+        '	if mondointerrupt_ShouldTrigger() {',
+        '		mondointerrupt_Handle()',
+        '		return',
+        '	}',
+        '	if nm_HandleStickerStackInterrupt(1, 0, 1)',
+        '		return'
+    )
+    cNew := StrReplace(c, malformedGoGatherMondoStack, fixedGoGatherMondoStack)
+    if (cNew != c) {
+        c := cNew
+        FileAppend("✓ Repaired malformed Mondo/Sticker Stack guard in nm_GoGather()`n", logFile)
+    }
     if !InStr(c, 'nm_toBooster("blue")`r`n`t`treturn') {
         preBfbPattern := '(?m)(^\tif nm_MondoInterrupt\(\)\r?\n^\t\treturn\r?\n)(?!^\tif nm_BlueBoosterInterrupt\(\) \{)'
-        preBfbInsert := '$1`tif nm_BlueBoosterInterrupt() {`r`n`t`tnm_toBooster("blue")`r`n`t`treturn`r`n`t}`r`n'
+        preBfbInsert := '$1`tif mondointerrupt_ShouldTrigger() {`r`n`t`tmondointerrupt_Handle()`r`n`t`treturn`r`n`t}`r`n`tif nm_BlueBoosterInterrupt() {`r`n`t`tnm_toBooster("blue")`r`n`t`treturn`r`n`t}`r`n'
         cNew := RegExReplace(c, preBfbPattern, preBfbInsert, &preBfbCount, 1)
         if (preBfbCount > 0 && cNew != c) {
             c := cNew
-            FileAppend("✓ Added immediate BFB jump in nm_GoGather()`n", logFile)
+            FileAppend("✓ Added immediate Mondo then BFB jump in nm_GoGather()`n", logFile)
         }
     }
     goGatherImmediateBad := JoinLines(
@@ -1212,6 +1256,10 @@ if FileExist(natroPath) {
         '		return'
     )
     goGatherImmediateGood := JoinLines(
+        '	if mondointerrupt_ShouldTrigger() {',
+        '		mondointerrupt_Handle()',
+        '		return',
+        '	}',
         '	if nm_HandleStickerStackInterrupt(1, 0, 1)',
         '		return',
         '	if nm_BlueBoosterInterrupt() {',
@@ -1285,6 +1333,10 @@ if FileExist(natroPath) {
         '				}'
     )
     gatherHighGood := JoinLines(
+        '				if mondointerrupt_ShouldTrigger() {',
+        '					mondointerrupt_Handle()',
+        '					return',
+        '				}',
         '				if nm_StickerStackInterrupt() {',
         '					Click "Up"',
         '					nm_endWalk()',
@@ -1407,20 +1459,20 @@ if FileExist(natroPath) {
         convertHead := SubStr(c, convertPos, 400)
         if !InStr(convertHead, 'nm_HandleStickerStackInterrupt(1, 0, 0)') {
             convertStartPattern := '(?m)(^\tif \(nm_NightInterrupt\(\) \|\| nm_MondoInterrupt\(\)\)\r?\n^\t\treturn\r?\n)'
-            convertStartInsert := '$1`tif nm_HandleStickerStackInterrupt(1, 0, 0)`r`n`t`treturn`r`n'
+            convertStartInsert := '$1`tif mondointerrupt_ShouldTrigger() {`r`n`t`tmondointerrupt_Handle()`r`n`t`treturn`r`n`t}`r`n`tif nm_HandleStickerStackInterrupt(1, 0, 0)`r`n`t`treturn`r`n'
             cNew := RegExReplace(c, convertStartPattern, convertStartInsert, &convertStartCount, 1)
             if (convertStartCount > 0 && cNew != c) {
                 c := cNew
-                FileAppend("✓ Added Sticker Stack check at start of nm_convert()`n", logFile)
+                FileAppend("✓ Added Mondo Interrupt check at start of nm_convert()`n", logFile)
             }
         }
     }
     convertStartNormalizePattern := '(?m)(^\tif \(nm_NightInterrupt\(\) \|\| nm_MondoInterrupt\(\)\)\r?\n^\t\treturn\r?\n)(?:^\tif nm_HandleStickerStackInterrupt\(1, 0, 0\)\r?\n^\t\treturn\r?\n)+(\r?\n^\thwnd := GetRobloxHWND\(\))'
-    convertStartNormalizeReplace := '$1`tif nm_HandleStickerStackInterrupt(1, 0, 0)`r`n`t`treturn$2'
+    convertStartNormalizeReplace := '$1`tif mondointerrupt_ShouldTrigger() {`r`n`t`tmondointerrupt_Handle()`r`n`t`treturn`r`n`t}`r`n`tif nm_HandleStickerStackInterrupt(1, 0, 0)`r`n`t`treturn`r`n$2'
     cNew := RegExReplace(c, convertStartNormalizePattern, convertStartNormalizeReplace, &convertStartNormalizeCount, 1)
     if (convertStartNormalizeCount > 0 && cNew != c) {
         c := cNew
-        FileAppend("✓ Normalized nm_convert() startup Sticker Stack checks to working layout`n", logFile)
+        FileAppend("✓ Added Mondo Interrupt check in normalized nm_convert() startup`n", logFile)
     }
     if (convertPos := InStr(c, 'nm_convert(ignoreActiveConvertState := 0, forceBalloonConvert := 0){')) {
         convertDisconnectPattern := '(?m)(^([ \t]*)if \(disconnectcheck\(\)\) \{\r?\n^\2[ \t]*return\r?\n^\2\})(?!\r?\n^\2if nm_HandleStickerStackInterrupt\(1, 0, 0\)\r?\n^\2[ \t]*return)(\r?\n^\2if \((?:\(PFieldBoosted = 1\)|PFieldBoosted) [^\r\n]*)'
@@ -1443,6 +1495,12 @@ if FileExist(natroPath) {
         '			if (disconnectcheck()) {',
         '				return',
         '			}',
+        '			if mondointerrupt_ShouldTrigger() {',
+        '				mondointerrupt_Handle()',
+        '				return',
+        '			}',
+        '			if nm_HandleStickerStackInterrupt(1, 0, 0)',
+        '				return',
         '			if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {'
     )
     cNew := StrReplace(c, backpackStackNeedle, backpackStackReplace)
@@ -1460,6 +1518,10 @@ if FileExist(natroPath) {
     balloonAfbReplace := JoinLines(
         '				if(AFBuseGlitter || AFBuseBooster) {',
         '					nm_setStatus("Interrupted", "AFB")',
+        '					return',
+        '				}',
+        '				if mondointerrupt_ShouldTrigger() {',
+        '					mondointerrupt_Handle()',
         '					return',
         '				}',
         '				if nm_HandleStickerStackInterrupt(1, 0, 0)',
@@ -1568,6 +1630,86 @@ if FileExist(natroPath) {
         FileAppend("✓ Switched enzyme boosted-only check to nm_GatherBoostInterrupt()`n", logFile)
     }
 
+    ; 1d3. Mid-convert glitter renewal: travel to field, glitter, walk back
+    if !InStr(c, 'nm_ConvertRenewGlitter') {
+        crf := []
+        crf.Push('nm_ConvertRenewGlitter(fieldName) {')
+        crf.Push('	global GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason')
+        crf.Push('	if (GlitterKey = "none" || fieldName = "None")')
+        crf.Push('		return 0')
+        crf.Push('	nm_setStatus("Traveling", "Glitter Renewal -> " fieldName)')
+        crf.Push('	nm_gotoField(fieldName)')
+        crf.Push('	Sleep 1000')
+        crf.Push('	Send "{" GlitterKey "}"')
+        crf.Push('	Sleep 500')
+        crf.Push('	LastGlitter := nowUnix()')
+        crf.Push('	GatherFieldBoostedStart := LastGlitter')
+        crf.Push('	fieldOverrideReason := "Boost"')
+        crf.Push('	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"')
+        crf.Push('	IniWrite fieldName, "settings\nm_config.ini", "Boost", "LastBoostedField"')
+        crf.Push('	IniWrite GatherFieldBoostedStart, "settings\nm_config.ini", "Boost", "LastBoostedTime"')
+        crf.Push('	nm_setStatus("Boosted", "Glitter Renewed - Returning to Convert")')
+        crf.Push('	nm_walkFrom(fieldName)')
+        crf.Push('	nm_findHiveSlot()')
+        crf.Push('	return 1')
+        crf.Push('}')
+        convertRenewFunc := JoinLines(crf*)
+        ; Insert before nm_convert
+        convertNeedle := 'nm_convert(ignoreActiveConvertState := 0, forceBalloonConvert := 0){'
+        cNew := StrReplace(c, convertNeedle, convertRenewFunc "`r`n`r`n" convertNeedle)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added nm_ConvertRenewGlitter() function`n", logFile)
+        }
+
+        ; Replace backpack convert "Field Boosted" interrupt
+        oldBackpackBoost := JoinLines(
+            '			if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {',
+            '				nm_setStatus("Interrupted", "Field Boosted")',
+            '				return',
+            '			}'
+        )
+        newBackpackBoost := JoinLines(
+            '			if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>750 && (nowUnix()-GatherFieldBoostedStart)<840 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {',
+            '				nm_ConvertRenewGlitter(FieldName)',
+            '			}'
+        )
+        cNew := StrReplace(c, oldBackpackBoost, newBackpackBoost)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Replaced backpack convert boost interrupt with glitter renewal`n", logFile)
+        }
+
+        ; Replace balloon convert "Field Boosted" interrupt
+        oldBalloonBoost := JoinLines(
+            '				if ((PFieldBoosted = 1) && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {',
+            '					nm_setStatus("Interrupted", "Field Boosted")',
+            '					return',
+            '				}'
+        )
+        newBalloonBoost := JoinLines(
+            '				if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>750 && (nowUnix()-GatherFieldBoostedStart)<840 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {',
+            '					nm_ConvertRenewGlitter(FieldName)',
+            '				}'
+        )
+        cNew := StrReplace(c, oldBalloonBoost, newBalloonBoost)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Replaced balloon convert boost interrupt with glitter renewal`n", logFile)
+        }
+    }
+
+    ; 1d4. Remove PFieldBoostExtend 30-min extension from gather loop
+    if InStr(c, 'PFieldBoostExtend && (nowUnix()-GatherFieldBoostedStart)<1800 && (nowUnix()-LastGlitter)<900') {
+        cNew := StrReplace(c
+            , '|| (PFieldBoostExtend && (nowUnix()-GatherFieldBoostedStart)<1800 && (nowUnix()-LastGlitter)<900)'
+            , ''
+        )
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Removed PFieldBoostExtend 30-min gather extension`n", logFile)
+        }
+    }
 
     ; 1e. Override Logic
     if (patchTadSyncCore) {
@@ -1771,7 +1913,7 @@ if FileExist(natroPath) {
         '(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck" . (MondoInterruptCheck ? " Checked" : ""), "Mondo Interrupt")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)',
         'MainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)',
         '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)',
-        '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)',
+        '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)',
         'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")',
         'MainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")'
     )
@@ -1813,8 +1955,8 @@ if FileExist(natroPath) {
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w145 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)')
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck" . (StickerStackInterruptCheck ? " Checked" : ""), "Sticker Stack Interrupt").OnEvent("Click", nm_StickerStackToggle)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck" . (MondoInterruptCheck ? " Checked" : ""), "Mondo Interrupt")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Checked" PFieldBoosted, "Glitter Extend").OnEvent("Click", aq_togglePFieldBoosted)')
     c := StrReplace(c, 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck Disabled", "Sticker Stack Interrupt")`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Disabled", "Glitter Extend")', 'MainGui.Add("CheckBox", "x185 y70 w140 h18 vStickerStackInterruptCheck Disabled", "Sticker Stack Interrupt")`r`n(GuiCtrl := MainGui.Add("CheckBox", "x185 y95 w135 h18 vMondoInterruptCheck Disabled", "Mondo Interrupt")).Section := "Extensions"`r`nMainGui.Add("CheckBox", "x345 y45 w135 h18 vPFieldBoosted Disabled", "Glitter Extend")')
-    c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x335 y70 w145 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)')
-    c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)')
+    c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x335 y70 w145 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)')
+    c := StrReplace(c, '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)', '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)`r`n(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)')
     c := StrReplace(c, 'MainGui.Add("GroupBox", "x335 y23 w155 h80", "Extras")', 'MainGui.Add("GroupBox", "x335 y23 w155 h105", "Extras")')
     c := StrReplace(c, 'MainGui.Add("Text", "x12 y109 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y121 w476 Center c666666", "Inspired by @baspas")', 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")')
     if !InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")') && InStr(c, 'MainGui.Add("GroupBox", "x5 y23 w490 h80", "Extensions")') {
@@ -1822,7 +1964,7 @@ if FileExist(natroPath) {
         FileAppend("✓ Split Extensions controls into Interupts and Extras sections`n", logFile)
     }
     if InStr(c, 'MainGui.Add("GroupBox", "x175 y23 w155 h105", "Interupts")') && !InStr(c, 'MainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")') {
-        creditsNeedle := '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+        creditsNeedle := '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)'
         creditsInsert := creditsNeedle '`r`nMainGui.Add("Text", "x12 y134 w476 Center c666666", "Made by: @definetlynotray")`r`nMainGui.Add("Text", "x12 y146 w476 Center c666666", "Inspired by @baspas")'
         if InStr(c, creditsNeedle) {
             c := StrReplace(c, creditsNeedle, creditsInsert)
@@ -1899,8 +2041,99 @@ if FileExist(natroPath) {
                     if (pos := InStr(c, "#Warn")) {
                         c := SubStr(c, 1, pos-1) includeStr SubStr(c, pos)
                         FileAppend("✓ Auto-included Extensions\\" extFile "`n", logFile)
-                    }
-                }
+    }
+    ; BFB retry: make nm_toBooster return success/failure and add retry loop for blue booster
+    if !InStr(c, 'nm_toBooster("blue", 3)') && !InStr(c, 'bfbRetryMax') {
+        ; Step 1: Make nm_toBooster return 1 on success, 0 on failure
+        cNew := StrReplace(c
+            , '				If A_Index = 10 ' "`r`n" '					nm_setStatus("Failed", "Could not find field boost!")'
+            , '				If A_Index = 10 {`r`n					nm_setStatus("Failed", "Could not find field boost!")`r`n					return 0`r`n				}'
+        )
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added return 0 on boost detection failure in nm_toBooster()`n", logFile)
+        }
+        cNew := StrReplace(c
+            , '			break`r`n		}`r`n		else if (A_Index = 2)'
+            , '			return 1`r`n		}`r`n		else if (A_Index = 2)'
+        )
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added return 1 on boost success in nm_toBooster()`n", logFile)
+        }
+        cNew := StrReplace(c
+            , '	}`r`n}`r`n`r`n;;;;;;;;; START AFB'
+            , '	}`r`n	return 0`r`n}`r`n`r`n;;;;;;;;; START AFB'
+        )
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added fallback return 0 at end of nm_toBooster()`n", logFile)
+        }
+    }
+    ; BFB retry: wrap blue booster calls in retry loop
+    if !InStr(c, 'bfbRetryMax') {
+        ; High-priority BFB in nm_GoGather (immediate)
+        oldGoGatherBfb := JoinLines(
+            '	if nm_BlueBoosterInterrupt() {',
+            '		nm_toBooster("blue")',
+            '		return',
+            '	}'
+        )
+        newGoGatherBfb := JoinLines(
+            '	if nm_BlueBoosterInterrupt() {',
+            '		bfbRetryMax := 3, bfbRetry := 0',
+            '		while (bfbRetry < bfbRetryMax) {',
+            '			bfbRetry++',
+            '			if nm_toBooster("blue")',
+            '				break',
+            '			nm_setStatus("Retrying", "BFB attempt " bfbRetry "/" bfbRetryMax)',
+            '		}',
+            '		return',
+            '	}'
+        )
+        cNew := StrReplace(c, oldGoGatherBfb, newGoGatherBfb)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added BFB retry loop in nm_GoGather()`n", logFile)
+        }
+        ; High-priority gather interrupt BFB
+        oldHighBfb := JoinLines(
+            '				if nm_BlueBoosterInterrupt() {',
+            '					interruptReason := "Blue Booster Ready"',
+            '					break',
+            '				}'
+        )
+        newHighBfb := JoinLines(
+            '				if nm_BlueBoosterInterrupt() {',
+            '					interruptReason := "Blue Booster Ready"',
+            '					break',
+            '				}'
+        )
+        cNew := StrReplace(c, oldHighBfb, newHighBfb)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Verified BFB high-priority gather interrupt (no in-loop retry)`n", logFile)
+        }
+        ; Low-priority gather interrupt BFB (uses break too)
+        oldLowBfb := JoinLines(
+            '				if nm_BlueBoosterInterrupt() {',
+            '					interruptReason := "Blue Booster Ready"',
+            '					break',
+            '				}'
+        )
+        newLowBfb := JoinLines(
+            '				if nm_BlueBoosterInterrupt() {',
+            '					interruptReason := "Blue Booster Ready"',
+            '					break',
+            '				}'
+        )
+        cNew := StrReplace(c, oldLowBfb, newLowBfb)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Verified BFB low-priority gather interrupt (no in-loop retry)`n", logFile)
+        }
+    }
+    }
             }
         }
     }
@@ -1946,8 +2179,8 @@ if FileExist(natroPath) {
         ? '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck" . (PreGlitterCheck ? " Checked" : ""), "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)'
         : '(GuiCtrl := MainGui.Add("CheckBox", "x345 y70 w135 h18 vPreGlitterCheck Disabled", "Pre-Glitter")).Section := "Extensions"'
     enzymeLine := patchEnzymeBalloon
-        ? '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Boost", GuiCtrl.OnEvent("Click", nm_saveConfig)'
-        : '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly Disabled", "Boosted Enzyme Only")).Section := "Boost"'
+        ? '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly" . (EnzymesBoostedOnly ? " Checked" : ""), "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)'
+        : '(GuiCtrl := MainGui.Add("CheckBox", "x345 y95 w140 h18 vEnzymesBoostedOnly Disabled", "Boosted Enzyme Only")).Section := "Extensions"'
     extensionsUnlockExtras := ""
     if !patchGlitterExtend
         extensionsUnlockExtras .= '`tMainGui["PFieldBoosted"].Value := 0`r`n`tMainGui["PreGlitterCheck"].Value := 0`r`n'
@@ -1994,7 +2227,14 @@ if FileExist(natroPath) {
     c := EnsureConfigMapEntry(c, "Boost", "StickerStackInterruptCheck", patchStickerStack ? 1 : 0, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackUse", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Extensions", "MondoInterruptCheck", patchMondoInterrupt ? 1 : 0, &mapChanged)
-    c := EnsureConfigMapEntry(c, "Settings", "EnzymesBoostedOnly", patchEnzymeBalloon ? 1 : 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Extensions", "EnzymesBoostedOnly", patchEnzymeBalloon ? 1 : 0, &mapChanged)
+    if InStr(c, 'config["Settings"]') {
+        cNew := RegExReplace(c, 'm)\R\s*, "EnzymesBoostedOnly", [^\r\n]+', '', &removedLegacyEnzymeConfigCount, 1)
+        if (removedLegacyEnzymeConfigCount > 0 && cNew != c) {
+            c := cNew
+            FileAppend("✓ Removed legacy Settings EnzymesBoostedOnly config entry`n", logFile)
+        }
+    }
 
     oldMondoButton := 'MainGui.Add("Button", "x170 y40 w150 h20 vMondoHopGUI Disabled", "Mondo Hop").OnEvent("Click", aq_MondoHopGUI)'
     oldBoostGroup := 'MainGui.Add("GroupBox", "x15 y65 w470 h55", "TadSync Boosted")'
@@ -2155,7 +2395,7 @@ if FileExist(natroPath) {
             'nm_MondoInterrupt() => (mondointerrupt_ShouldTrigger() || (utc_min := FormatTime(A_NowUTC, "m"), now := nowUnix(),',
             '`t((MondoBuffCheck = 1) && ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Kill")',
             '`t`t|| (!nm_GatherBoostInterrupt()',
-            '`t`t`t&& ((utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Buff")',
+            '`t`t`t&& (((MondoInterruptCheck != 1) && utc_min<14 && (now-LastMondoBuff)>960 && MondoAction="Buff")',
             '`t`t`t|| (utc_min<12 && (now-LastGuid)<60 && PMondoGuid && MondoAction="Guid")',
             '`t`t`t|| (utc_min<=8 && (now-LastMondoBuff)>960 && PMondoGuid && MondoAction="Tag")))',
             '`t`t)',
@@ -2166,6 +2406,20 @@ if FileExist(natroPath) {
         if (cNew != c) {
             c := cNew
             FileAppend("✓ Extended nm_MondoInterrupt() with standalone Mondo Interrupt trigger`n", logFile)
+        }
+
+        mondoPlanterIgnoreBlock := JoinLines(
+            'nm_MondoPlanterIgnore() => (',
+            '`tutc_min := FormatTime(A_NowUTC, "m"),',
+            '`t(utc_min>=55 || utc_min=0)',
+            ')'
+        )
+        if !InStr(c, 'nm_MondoPlanterIgnore() => (') {
+            cNew := StrReplace(c, mondoInterruptNew, mondoInterruptNew "`r`n`r`n" mondoPlanterIgnoreBlock)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("✓ Added Mondo planter ignore window helper`n", logFile)
+            }
         }
 
         mondoHandleNeedle := JoinLines(
@@ -2180,12 +2434,22 @@ if FileExist(natroPath) {
             '		return',
             '	if mondointerrupt_Handle()',
             '		return',
+            '	if (MondoInterruptCheck = 1 && MondoBuffCheck = 1 && MondoAction = "Buff")',
+            '		return',
             '	if nm_MondoInterrupt(){'
         )
         cNew := StrReplace(c, mondoHandleNeedle, mondoHandleInsert)
         if (cNew != c) {
             c := cNew
             FileAppend("✓ Added standalone Mondo Interrupt handler entry to nm_Mondo()`n", logFile)
+        }
+
+        planterMondoGuardOld := 'if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt())'
+        planterMondoGuardNew := 'if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt() || nm_MondoPlanterIgnore())'
+        cNew := StrReplace(c, planterMondoGuardOld, planterMondoGuardNew)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added Mondo planter guard to planter loops`n", logFile)
         }
     }
 
@@ -2873,7 +3137,7 @@ if FileExist(statusPath) {
             'settings["StickerStackInterruptCheck"] := {enum: ResolveEnumInt("StickerStackInterruptCheck", 371), type: "int", section: "Boost", regex: "i)^(0|1)$"}',
             'settings["PFieldBoosted"] := {enum: ResolveEnumInt("PFieldBoosted", 372), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
             'settings["PreGlitterCheck"] := {enum: ResolveEnumInt("PreGlitterCheck", 373), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
-            'settings["EnzymesBoostedOnly"] := {enum: ResolveEnumInt("EnzymesBoostedOnly", 374), type: "int", section: "Settings", regex: "i)^(0|1)$"}',
+            'settings["EnzymesBoostedOnly"] := {enum: ResolveEnumInt("EnzymesBoostedOnly", 374), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
             'settings["MondoInterruptCheck"] := {enum: ResolveEnumInt("MondoInterruptCheck", 375), type: "int", section: "Extensions", regex: "i)^(0|1)$"}'
         )
         c := StrReplace(c, statusSettingsNeedle, statusSettingsInsert)
@@ -3971,10 +4235,12 @@ if FileExist(configPath) {
         c := SetIniSectionKey(c, "Extensions", "FieldFollowingCheck", 0, &cfgChanged)
     }
     if patchEnzymeBalloon {
-        c := EnsureIniKey(c, "Settings", "EnzymesBoostedOnly", 1, &cfgChanged)
+        c := EnsureIniKey(c, "Extensions", "EnzymesBoostedOnly", 1, &cfgChanged)
     } else {
-        c := SetIniSectionKey(c, "Settings", "EnzymesBoostedOnly", 0, &cfgChanged)
+        c := SetIniSectionKey(c, "Extensions", "EnzymesBoostedOnly", 0, &cfgChanged)
     }
+    c := RegExReplace(c, '(?ms)^\[Boost\]\R(.*?\R)EnzymesBoostedOnly=\d+\R', '[Boost]`r`n$1')
+    c := RegExReplace(c, '(?ms)^\[Settings\]\R(.*?\R)EnzymesBoostedOnly=\d+\R', '[Settings]`r`n$1')
     if patchStatMonitorTheme {
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackgroundMode", "Default", &cfgChanged)
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackgroundFlat", "FF121212", &cfgChanged)
@@ -3996,6 +4262,15 @@ if FileExist(configPath) {
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageMode", "Off", &cfgChanged)
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageOpacity", 100, &cfgChanged)
         c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageFit", "Contain", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyGatherColor", "FFA6FF7C", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyConvertColor", "FFFECA40", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyOtherColor", "FF859AAD", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorStart", "FFFF0000", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorMid", "FFFF8000", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorEnd", "FF41FF80", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieGatherColor", "FFA6FF7C", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieConvertColor", "FFFECA40", &cfgChanged)
+        c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieOtherColor", "FF859AAD", &cfgChanged)
     }
 
     if (c != orig) {
@@ -4034,6 +4309,15 @@ if patchStatMonitorTheme {
     c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageMode", "Off", &cfgChanged)
     c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageOpacity", 100, &cfgChanged)
     c := EnsureIniSectionKey(c, "StatMonitorTheme", "InfoImageFit", "Contain", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyGatherColor", "FFA6FF7C", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyConvertColor", "FFFECA40", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "HoneyOtherColor", "FF859AAD", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorStart", "FFFF0000", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorMid", "FFFF8000", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "BackpackColorEnd", "FF41FF80", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieGatherColor", "FFA6FF7C", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieConvertColor", "FFFECA40", &cfgChanged)
+    c := EnsureIniSectionKey(c, "StatMonitorTheme", "PieOtherColor", "FF859AAD", &cfgChanged)
 
     if (c != orig) {
         try {
