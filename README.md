@@ -2,6 +2,7 @@
 
 This guide explains how to install Ray's TadSync patch onto almost any Natro Macro version.
 ## If you are confuse dm @DefinetlyNotRay on discord for help!
+### Join the discord server to stay updated for future updates!: https://discord.gg/AZEUznPQQ4
 
 ## What this patch adds
 
@@ -27,7 +28,7 @@ This guide explains how to install Ray's TadSync patch onto almost any Natro Mac
 
 Copy these from the patched build into the target Natro root:
 
-- `apply_tadsync_patch.ahk`
+- `patcher.ahk`
 - `Extensions\`
 - `patch_templates\`
 - `Assets\`
@@ -35,7 +36,7 @@ Copy these from the patched build into the target Natro root:
 
 At minimum, the important folders/files are:
 
-- `apply_tadsync_patch.ahk`
+- `patcher.ahk`
 - `Extensions\tadsync_extension.ahk`
 - `Extensions\tadsync_status_extension.ahk`
 - `patch_templates\statmonitor_theme_main_patch.ahk`
