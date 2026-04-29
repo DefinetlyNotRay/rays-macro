@@ -1,0 +1,6 @@
+			; BOOST LEASE CONVERT START
+			nm_CheckBoostLeaseWarning()
+			if nm_GetBoostLeaseAction() {
+				nm_ConvertRenewGlitter(FieldName)
+			}
+			; BOOST LEASE CONVERT END

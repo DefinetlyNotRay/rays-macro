@@ -1,0 +1,2 @@
+			if (location = "blue" && (v = "Pine Tree" || v = "Blue Flower" || v = "Bamboo"))
+				nm_IncrementStat(StrReplace(v, " "))

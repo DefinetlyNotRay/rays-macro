@@ -52,23 +52,39 @@ StatMonitorTheme_CreateGraphBackgroundBrush() {
 	return Gdip_BrushCreateSolid(theme["GraphFill"])
 }
 
-StatMonitorTheme_ResolveCanvasHeight(baseHeight := 7000) {
-	buffTop := 360 + 1758
+StatMonitorTheme_ResolveBuffPanelHeight() {
 	stackTopPadding := 135
-	stackBottomPadding := 240
+	stackBottomPadding := 120
 	stackGap := 20
 
 	totalStackHeight := 0
 	stackCount := 0
 	for _, spec in StatMonitorTheme_BuffGraphSpecs() {
+		id := spec[1]
+		if !StatMonitorTheme_GraphEnabled(id)
+			continue
 		totalStackHeight += spec[3]
 		stackCount += 1
 	}
 	if (stackCount > 0)
 		totalStackHeight += (stackCount - 1) * stackGap
 
-	requiredHeight := buffTop + stackTopPadding + totalStackHeight + stackBottomPadding
-	return Max(baseHeight, requiredHeight)
+	return stackTopPadding + totalStackHeight + stackBottomPadding
+}
+
+StatMonitorTheme_ResolveInfoPanelHeight() {
+	return 400
+}
+
+StatMonitorTheme_ResolveStatsPanelHeight() {
+	return 5200 + StatMonitorTheme_ResolveInfoPanelHeight()
+}
+
+StatMonitorTheme_ResolveCanvasHeight(baseHeight := 7000) {
+	leftBottom := (360 + 1758) + StatMonitorTheme_ResolveBuffPanelHeight()
+	rightBottom := 120 + StatMonitorTheme_ResolveStatsPanelHeight()
+	canvasBottomPadding := 120
+	return Max(leftBottom, rightBottom) + canvasBottomPadding
 }
 
 StatMonitorTheme_BuffGraphSpecs() {
@@ -90,9 +106,9 @@ StatMonitorTheme_BuffGraphSpecs() {
 		, ["jbshare", "JB Share", 110, 0xfff9ccff, 15]
 		, ["guiding", "Guiding Star", 110, 0xffffef8e, 16]
 		, ["beesmascheer", "Beesmas Cheer", 110, 0xff00ff00, 17]
-		, ["pinetreefieldboost", "Pine Field Boost", 110, 0xff00e027, 18]
-		, ["bamboofieldboost", "Bamboo Field Boost", 110, 0xff00e027, 19]
-		, ["blueflowerfieldboost", "Blue Flower Field Boost", 110, 0xff00e027, 20]
+		, ["pinetreefieldboost", "Pine Field Boost", 250, 0xff00e027, 18]
+		, ["bamboofieldboost", "Bamboo Field Boost", 250, 0xff00e027, 19]
+		, ["blueflowerfieldboost", "Blue Flower Field Boost", 250, 0xff00e027, 20]
 		, ["snowflakebuff", "Snowflake Buff", 110, 0xfffcfcfc, 21]
 		, ["cloudbuff", "Cloud Buff", 110, 0xffd8e1ea, 22]
 		, ["digitalcorruption", "Digital Corruption", 110, 0xff7352ba, 23]

@@ -109,16 +109,27 @@ honey_12h[180] := start_honey
 ; buff_values format: buff:{time_coefficient:value}
 (buff_values := Map()).CaseSense := 0
 (future_buff_values := Map()).CaseSense := 0
+(blue_field_debounce := Map()).CaseSense := 0
 for v in ["haste","melody","redboost","blueboost","whiteboost","focus","bombcombo","balloonaura","clock","jbshare","babylove","inspire","bear","pollenmark","honeymark","festivemark","popstar","comforting","motivating","satisfying","refreshing","invigorating","blessing","bloat","guiding","mondo","reindeerfetch","tideblessing","beesmascheer","pinetreefieldboost","blueflowerfieldboost","bamboofieldboost","snowflakebuff","cloudbuff","digitalcorruption","StickerStack"]
 	buff_values[v] := Map()
 future_buff_values["StickerStack"] := Map()
+for v in ["pinetreefieldboost","bamboofieldboost","blueflowerfieldboost"]
+	blue_field_debounce[v] := Map("pending", 0
+		, "pendingSlot", 0
+		, "streak", 0
+		, "confirmed", 0
+		, "lastConfirmed", 0
+		, "missingSince", 0
+		, "missingSlot", 0
+		, "graceActive", 0
+		, "recoveryMarkers", [])
 
 ; INFO FROM MAIN SCRIPT
 ; status_changes format: (A_Min*60+A_Sec+1):status_number (0 = other, 1 = gathering, 2 = converting)
 status_changes := Map()
 
 ; stats format: number:[string, value]
-stats := [["Total Boss Kills",0],["Total Vic Kills",0],["Total Bug Kills",0],["Total Planters",0],["Quests Done",0],["Disconnects",0]]
+stats := [["Total Boss Kills",0],["Total Vic Kills",0],["Total Bug Kills",0],["Total Planters",0],["Quests Done",0],["Disconnects",0],["Pine Tree",0],["Blue Flower",0],["Bamboo",0]]
 
 ; backpack_values format: A_Min*60+A_Sec:percent
 backpack_values := Map()
@@ -222,10 +233,11 @@ StatMonitorTheme_DrawBackground(G, w, h)
 
 ; regions format: region_name:[x,y,w,h]
 main_width := Max(240, Min(4080, w - 240))
+buff_height := StatMonitorTheme_ResolveBuffPanelHeight()
 regions := Map("honey/sec", [120,120,main_width,1080]
 	, "stats", [w-1560-120,120,1560,h-240]
 	, "backpack", [120,240+1080,main_width,678]
-	, "buffs", [120,360+1758,main_width,h-480-1758])
+	, "buffs", [120,360+1758,main_width,buff_height])
 
 stat_regions := Map("lasthour", [regions["stats"][1]+100,regions["stats"][2]+100,regions["stats"][3]-200,1206]
 	, "session", [regions["stats"][1]+100,regions["stats"][2]+1406,regions["stats"][3]-200,1289]
@@ -554,12 +566,12 @@ DetectBuffs()
 	pBMArea := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")
 
 	; basic on/off
-	for v in ["jbshare","babylove","festivemark","guiding","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff","digitalcorruption","beesmascheer"]
+	for v in ["jbshare","babylove","festivemark","guiding","snowflakebuff","cloudbuff","digitalcorruption","beesmascheer"]
 	{
 		if (v = "digitalcorruption")
 			buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , , , , 30) = 1)
 		else
-			buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , 30, , , InStr(v, "mark") ? 6 : (v = "guiding" || v = "pinetreefieldboost" || v = "bamboofieldboost" || v = "blueflowerfieldboost" || v = "beesmascheer") ? 10 : 0, , 7) = 1)
+			buff_values[v][i] := (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" v], , , 30, , , InStr(v, "mark") ? 6 : (v = "guiding" || v = "beesmascheer") ? 10 : 0, , 7) = 1)
 	}
 
 	; bear morphs
@@ -652,6 +664,148 @@ DetectBuffs()
 	for v in ["melody","haste"]
 		if !buff_values[v].Has(i)
 			buff_values[v][i] := 0
+
+	; blue field boosts x1-x4
+	for v in ["pinetreefieldboost","bamboofieldboost","blueflowerfieldboost"]
+	{
+		iconFound := 0
+		detectedValue := 0
+		if !BFBS_FieldBoostSimplePresent(pBMArea, v, &list)
+		{
+			state := blue_field_debounce[v]
+			if (state["confirmed"] > 0 || state["lastConfirmed"] > 0)
+			{
+				now := nowUnix()
+				if (!state["graceActive"])
+					state["graceActive"] := 1, state["missingSince"] := now, state["missingSlot"] := i
+				if ((now - state["missingSince"]) <= 7)
+				{
+					state["pending"] := 0
+					state["pendingSlot"] := 0
+					state["streak"] := 0
+					buff_values[v][i] := state["lastConfirmed"] ? state["lastConfirmed"] : state["confirmed"]
+					blue_field_debounce[v] := state
+					continue
+				}
+			}
+			state["pending"] := 0
+			state["pendingSlot"] := 0
+			state["streak"] := 0
+			state["confirmed"] := 0
+			state["lastConfirmed"] := 0
+			state["missingSince"] := 0
+			state["missingSlot"] := 0
+			state["graceActive"] := 0
+			blue_field_debounce[v] := state
+			buff_values[v][i] := 0
+			continue
+		}
+
+		iconFound := 1
+		x := SubStr(list, 1, InStr(list, ",")-1)
+		y := SubStr(list, InStr(list, ",")+1)
+		buff_values[v][i] := 1
+		Gdip_GetImageDimensions(buff_bitmaps["pBM" v], &iconW, &iconH)
+
+		anchorX := x + iconW - 1
+		anchorY := y + 8
+		if (v = "pinetreefieldboost")
+		{
+			digitX1 := Max(0, anchorX + 6)
+			digitY1 := Max(0, anchorY - 20)
+			digitX2 := anchorX + 24
+			digitY2 := anchorY + 6
+		}
+		else if (v = "bamboofieldboost")
+		{
+			digitX1 := Max(0, anchorX + 0)
+			digitY1 := Max(0, anchorY - 12)
+			digitX2 := anchorX + 34
+			digitY2 := anchorY + 7
+		}
+		else
+		{
+			digitX1 := Max(0, anchorX + 4)
+			digitY1 := Max(0, anchorY - 12)
+			digitX2 := anchorX + 30
+			digitY2 := anchorY + 10
+		}
+
+		Loop 4
+		{
+			if (Gdip_ImageSearch(pBMArea, buff_characters[5-A_Index], , digitX1, digitY1, digitX2, digitY2) = 1)
+			{
+				buff_values[v][i] := 5 - A_Index
+				detectedValue := buff_values[v][i]
+				break
+			}
+			if (A_Index = 4)
+			{
+				buff_values[v][i] := 1
+				detectedValue := 1
+			}
+		}
+
+		if (detectedValue = 0)
+			detectedValue := buff_values[v][i]
+
+		state := blue_field_debounce[v]
+		if (detectedValue > 0)
+		{
+			if (state["graceActive"])
+			{
+				elapsed := nowUnix() - state["missingSince"]
+				if (elapsed <= 7)
+				{
+					state["recoveryMarkers"].Push(i)
+					state["graceActive"] := 0
+					state["missingSince"] := 0
+					state["missingSlot"] := 0
+				}
+				else
+				{
+					state["graceActive"] := 0
+					state["missingSince"] := 0
+					state["missingSlot"] := 0
+					state["confirmed"] := 0
+					state["lastConfirmed"] := 0
+				}
+			}
+			if (state["pending"] = detectedValue)
+				state["streak"] += 1
+			else
+				state["pending"] := detectedValue, state["pendingSlot"] := i, state["streak"] := 1
+			if (state["streak"] >= 2 || state["confirmed"] = detectedValue)
+				state["confirmed"] := detectedValue
+			if (state["confirmed"] = detectedValue)
+			{
+				state["lastConfirmed"] := detectedValue
+				if (state["pendingSlot"] > 0)
+					buff_values[v][state["pendingSlot"]] := detectedValue
+				buff_values[v][i] := detectedValue
+			}
+			else
+				buff_values[v][i] := 0
+			detectedValue := state["confirmed"]
+		}
+		else
+		{
+			state["pending"] := 0
+			state["pendingSlot"] := 0
+			state["streak"] := 0
+			state["confirmed"] := 0
+			buff_values[v][i] := 0
+		}
+		blue_field_debounce[v] := state
+		if (detectedValue = 0)
+			buff_values[v][i] := 0
+	}
+
+BFBS_FieldBoostSimplePresent(pBMArea, key, &list := "") {
+	iconVariation := (key = "bamboofieldboost") ? 30 : 30
+	iconY2 := (key = "bamboofieldboost") ? 10 : 10
+	return (Gdip_ImageSearch(pBMArea, buff_bitmaps["pBM" key], &list, , iconVariation, , , iconY2, , 7) = 1)
+}
 
 	; colour boost x1-x10
 	x := windowWidth
@@ -864,8 +1018,8 @@ DetectHoney()
 ********************************************************************************************************/
 SendHourlyReport(previewOutputPath := "")
 {
-	global pBM, regions, stat_regions, honey_values, honey_12h, backpack_values, buff_values, buff_colors, status_changes, start_time, start_honey, stats, latest_boost, latest_winds, graph_regions, version, natro_version, os_version, bitmaps, ocr_enabled, ocr_language
-	static honey_average := 0, honey_earned := 0, convert_time := 0, gather_time := 0, other_time := 0, stats_old := [["Total Boss Kills",0],["Total Vic Kills",0],["Total Bug Kills",0],["Total Planters",0],["Quests Done",0],["Disconnects",0]]
+	global pBM, regions, stat_regions, honey_values, honey_12h, backpack_values, buff_values, buff_colors, blue_field_debounce, status_changes, start_time, start_honey, stats, latest_boost, latest_winds, graph_regions, version, natro_version, os_version, bitmaps, ocr_enabled, ocr_language
+	static honey_average := 0, honey_earned := 0, convert_time := 0, gather_time := 0, other_time := 0, stats_old := [["Total Boss Kills",0],["Total Vic Kills",0],["Total Bug Kills",0],["Total Planters",0],["Quests Done",0],["Disconnects",0],["Pine Tree",0],["Blue Flower",0],["Bamboo",0]]
 	theme := StatMonitorTheme_Load()
 
 	if (honey_values.Count > 0)
@@ -1155,7 +1309,7 @@ SendHourlyReport(previewOutputPath := "")
 			Gdip_DeleteBrush(pBrush)
 
 
-			case "festivemark","popstar","melody","bear","babylove","jbshare","guiding","beesmascheer","pinetreefieldboost","bamboofieldboost","blueflowerfieldboost","snowflakebuff","cloudbuff","digitalcorruption","StickerStack":
+			case "festivemark","popstar","melody","bear","babylove","jbshare","guiding","beesmascheer","snowflakebuff","cloudbuff","digitalcorruption","StickerStack":
 			color := (k = "festivemark") ? StatMonitorTheme_GraphColor("festivemark", 0xffc84335)
 				: (k = "popstar") ? StatMonitorTheme_GraphColor("popstar", 0xff0096ff)
 				: (k = "melody") ? StatMonitorTheme_GraphColor("melody", 0xfff0f0f0)
@@ -1186,6 +1340,8 @@ SendHourlyReport(previewOutputPath := "")
 
 			default:
 			max_buff := (k = "inspire") ? Max(ceil(maxX(buff_values[k])/5)*5, 5) : 10
+			if (k = "pinetreefieldboost" || k = "bamboofieldboost" || k = "blueflowerfieldboost")
+				max_buff := 4
 			Gdip_TextToGraphics(G, "x0-" max_buff, "s44 Center Bold c" smTextPrimary " x" v[1]-190 " y" v[2]+190, "Segoe UI")
 
 			total := 0
@@ -1202,6 +1358,8 @@ SendHourlyReport(previewOutputPath := "")
 				{
 					if (x >= a//6 && x <= m//6)
 					{
+						if (k = "pinetreefieldboost" || k = "bamboofieldboost" || k = "blueflowerfieldboost")
+							y := Min(y, 4)
 						total += y
 						count++
 					}
@@ -1214,9 +1372,10 @@ SendHourlyReport(previewOutputPath := "")
 				: (k = "balloonaura") ? StatMonitorTheme_GraphColor("balloonaura", 0xff3350c3)
 				: (k = "inspire") ? StatMonitorTheme_GraphColor("inspire", 0xfff4ef14)
 				: (k = "precision") ? StatMonitorTheme_GraphColor("precision", 0xff8f4eb4)
-				: (k = "reindeerfetch") ? StatMonitorTheme_GraphColor("reindeerfetch", 0xffcc2c2c) : 0
-
-			pBrush := Gdip_BrushCreateSolid(color), Gdip_TextToGraphics(G, "x" . (count ? Round(total/count, 3) : "0.000"), "s32 Center Bold c" pBrush " x" v[1]-190 " y" v[2]+36, "Segoe UI"), Gdip_DeleteBrush(pBrush)
+				: (k = "reindeerfetch") ? StatMonitorTheme_GraphColor("reindeerfetch", 0xffcc2c2c)
+				: (k = "pinetreefieldboost") ? StatMonitorTheme_GraphColor("pinetreefieldboost", 0xff00e027)
+				: (k = "bamboofieldboost") ? StatMonitorTheme_GraphColor("bamboofieldboost", 0xff00e027)
+				: (k = "blueflowerfieldboost") ? StatMonitorTheme_GraphColor("blueflowerfieldboost", 0xff00e027) : 0
 
 			points := []
 			if (buff_values[k].Count > 0)
@@ -1225,7 +1384,11 @@ SendHourlyReport(previewOutputPath := "")
 				enum.Call(&x)
 				points.Push([4+v[3]*x/600, 4+v[4]])
 				for x,y in buff_values[k]
+				{
+					if (k = "pinetreefieldboost" || k = "bamboofieldboost" || k = "blueflowerfieldboost")
+						y := Min(y, 4)
 					points.Push([4+v[3]*(max_x := x)/600, 4+v[4]-(y/max_buff)*(v[4])])
+				}
 				points.Push([4+v[3]*max_x/600, 4+v[4]])
 			}
 
@@ -1617,7 +1780,7 @@ SendHourlyReport(previewOutputPath := "")
 	ReportChannelID := IniRead("settings\nm_config.ini", "Status", "ReportChannelID")
 	if (StrLen(ReportChannelID) < 17)
 		ReportChannelID := IniRead("settings\nm_config.ini", "Status", "MainChannelID")
-
+	result := "unknown"
 	try
 	{
 		chars := "0|1|2|3|4|5|6|7|8|9|a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z"
@@ -1701,7 +1864,6 @@ SendHourlyReport(previewOutputPath := "")
 			if (StrLen(responseText) > 700)
 				responseText := SubStr(responseText, 1, 700) "..."
 
-			try FileAppend("[" A_Now "] Hourly upload failed | status=" status " | attachment=" attachmentName " | attachmentBytes=" attachmentSize " | pngBytes=" pngSize " | multipartBytes=" size " | response=" responseText . Chr(10), A_ScriptDir "\tadsync_debug.txt", "UTF-8")
 		}
 	}
 	catch as e
@@ -1833,8 +1995,12 @@ SetStatus(wParam, lParam, *){
 * @author SP
 ***********************************************************************************************/
 IncrementStat(wParam, lParam, *){
-	if !IsInteger(wParam)
-		return 0
+	static statIndexMap := Map("PineTree", 7, "BlueFlower", 8, "Bamboo", 9)
+	if !IsInteger(wParam) {
+		if !statIndexMap.Has(wParam)
+			return 0
+		wParam := statIndexMap[wParam]
+	}
 	if (wParam < 1 || wParam > stats.Length)
 		return 0
 	if !IsObject(stats[wParam]) || (stats[wParam].Length < 2)

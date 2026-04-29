@@ -1,0 +1,257 @@
+nm_HandlePinePreGlitter(fieldName, field_type){
+	global GlitterKey, LastGlitter, GatherFieldBoostedStart, PFieldBoostExtend, fieldOverrideReason, BoostLeaseNearDiscordNotice, PendingStickerStackAfterExtend
+
+	if !nm_ShouldUsePinePreGlitter(fieldName, field_type)
+		return 0
+
+	PFieldBoostExtend := 1
+	LastGlitter := nowUnix()
+	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	nm_SpamGlitterKey()
+	nm_DebugGlitterPress("Pine pre-glitter", fieldName)
+	fieldOverrideReason := "Boost"
+	BoostLeaseNearDiscordNotice := 0
+	IniWrite fieldName, "settings\nm_config.ini", "Boost", "LastBoostedField"
+	nm_setStatus("Boosted", "Pre-Glitter: Pine Tree")
+	if (PendingStickerStackAfterExtend)
+		nm_RunPendingStickerStackAfterExtend()
+	return 1
+}
+
+nm_DiscordEscapeContent(text){
+	text := StrReplace(text, Chr(92), Chr(92) Chr(92))
+	text := StrReplace(text, Chr(34), Chr(92) Chr(34))
+	text := StrReplace(text, "``r``n", "\n")
+	text := StrReplace(text, "``n", "\n")
+	text := StrReplace(text, "``r", "\n")
+	return text
+}
+
+nm_ResolveBoostLeaseDiscordChannel(){
+	global discordMode, ReportChannelCheck, ReportChannelID, MainChannelCheck, MainChannelID
+
+	if (discordMode = 0)
+		return ""
+	if (ReportChannelCheck && ReportChannelID)
+		return ReportChannelID
+	if (MainChannelCheck && MainChannelID)
+		return MainChannelID
+	return ""
+}
+
+nm_NotifyBoostLeaseDiscord(eventText, reason := "", fieldName := ""){
+	global discordMode, webhook
+	message := eventText
+	if (reason != "")
+		message .= " | Reason: " reason
+	if (fieldName != "")
+		message .= " | Field: " fieldName
+	payload := '{"content":"' nm_DiscordEscapeContent(message) '"}'
+	if (discordMode = 0) {
+		if (webhook = "")
+			return 0
+		try discord.SendMessageAPI(payload)
+		return 1
+	}
+	channel := nm_ResolveBoostLeaseDiscordChannel()
+	if (channel = "")
+		return 0
+	try discord.SendMessageAPI(payload, "application/json", channel)
+	return 1
+}
+
+nm_DebugGlitterPress(sourceLabel := "", fieldName := ""){
+	return nm_NotifyBoostLeaseDiscord("Glitter Key Pressed", sourceLabel, fieldName)
+}
+
+nm_SpamGlitterKey(durationMs := 5000, intervalMs := 100){
+	global GlitterKey
+
+	if (GlitterKey = "none" || durationMs <= 0)
+		return 0
+	intervalMs := (intervalMs > 0 ? intervalMs : 1)
+	startTick := A_TickCount
+	SendInput "{" GlitterKey "}"
+	Sleep intervalMs
+	while ((A_TickCount - startTick) < durationMs) {
+		SendInput "{" GlitterKey "}"
+		Sleep intervalMs
+	}
+	return 1
+}
+
+; BOOST LEASE HELPERS START
+nm_RunPendingStickerStackAfterExtend(){
+	global PendingStickerStackAfterExtend
+
+	if (!PendingStickerStackAfterExtend)
+		return 0
+	PendingStickerStackAfterExtend := 0
+	return 0
+}
+
+nm_ClearBoostLeaseState(clearStoredBoost := 0){
+	global PFieldBoostExtend, BoostLeaseGlitterUsed, BoostLeaseNearDiscordNotice
+
+	PFieldBoostExtend := 0
+	BoostLeaseGlitterUsed := 0
+	BoostLeaseNearDiscordNotice := 0
+	if (clearStoredBoost) {
+		IniWrite "None", "settings\nm_config.ini", "Boost", "LastBoostedField"
+		IniWrite 0, "settings\nm_config.ini", "Boost", "LastBoostedTime"
+	}
+	return 1
+}
+
+nm_ArmBoostLease(fieldName, allowExtend := 1, resetLeaseState := 1){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, BoostLeaseNearDiscordNotice, BoostLeaseGlitterUsed, PFieldBoostExtend
+
+	if (!allowExtend || !PFieldBoosted || GlitterKey = "none" || fieldName = "" || fieldName = "None")
+		return 0
+	if (GatherFieldBoostedStart <= 0)
+		GatherFieldBoostedStart := IniRead("settings\nm_config.ini", "Boost", "LastBoostedTime", 0)
+	if (GatherFieldBoostedStart <= 0)
+		GatherFieldBoostedStart := nowUnix()
+	if (resetLeaseState) {
+		BoostLeaseGlitterUsed := 0
+		BoostLeaseNearDiscordNotice := 0
+		PFieldBoostExtend := 0
+	}
+	return 1
+}
+
+nm_GetBoostTotalDuration(){
+	global PFieldBoosted
+	return PFieldBoosted ? 1800 : 900
+}
+
+nm_GetBoostRemainingSeconds(boostStart){
+	if (boostStart <= 0)
+		return 0
+	return nm_GetBoostTotalDuration() - (nowUnix() - boostStart)
+}
+
+nm_GetBoostChaseStart(defaultStart){
+	global GatherFieldBoostedStart, LastGlitter, PFieldBoosted
+
+	if (defaultStart <= 0)
+		return 0
+	if (PFieldBoosted && (LastGlitter > GatherFieldBoostedStart) && ((nowUnix() - LastGlitter) < nm_GetBoostTotalDuration()))
+		return LastGlitter
+	return defaultStart
+}
+
+nm_GetBoostChaseRemainingSeconds(defaultStart){
+	chaseStart := nm_GetBoostChaseStart(defaultStart)
+	if (chaseStart <= 0)
+		return 0
+	return nm_GetBoostTotalDuration() - (nowUnix() - chaseStart)
+}
+
+nm_ExpireBoostLeaseIfOver(){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted
+
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0)
+		return 0
+	if (nowUnix() < nm_GetBoostChaseDeadline())
+		return 0
+	nm_ClearBoostLeaseState(1)
+	return 1
+}
+
+nm_IsBoostLeaseExtendWindow(){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, LastGlitter
+
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0 || (nowUnix() - LastGlitter) <= 900)
+		return 0
+	leaseAge := nowUnix() - GatherFieldBoostedStart
+	return (leaseAge >= 840 && leaseAge < 900)
+}
+
+nm_IsBoostLeaseGatherWindow(){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, fieldOverrideReason
+
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0)
+		return 0
+	if !(fieldOverrideReason = "None" || fieldOverrideReason = "Boost")
+		return 0
+	leaseAge := nowUnix() - GatherFieldBoostedStart
+	return (leaseAge >= 870 && leaseAge < 900)
+}
+
+nm_IsBoostLeaseNearWindow(sec := 60){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, BoostLeaseNearDiscordNotice
+
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0)
+		return 0
+	leaseAge := nowUnix() - GatherFieldBoostedStart
+	if (leaseAge >= (840 - sec) && leaseAge < 840) {
+		if (!BoostLeaseNearDiscordNotice) {
+			BoostLeaseNearDiscordNotice := 1
+			nm_NotifyBoostLeaseDiscord("Near Glitter Phase", "Entered the near-glitter warning window")
+		}
+		return 1
+	}
+	return 0
+}
+
+nm_CheckBoostLeaseWarning(){
+	if nm_ExpireBoostLeaseIfOver()
+		return 0
+	if nm_IsBoostLeaseNearWindow()
+		return 1
+	return 0
+}
+
+nm_GetBoostLeaseAction(){
+	global fieldOverrideReason
+
+	if nm_ExpireBoostLeaseIfOver()
+		return 0
+	if !(fieldOverrideReason = "None" || fieldOverrideReason = "Boost")
+		return 0
+	return nm_IsBoostLeaseExtendWindow() ? 1 : 0
+}
+
+nm_GetBoostLeaseGatherAction(){
+	global fieldOverrideReason
+
+	if nm_ExpireBoostLeaseIfOver()
+		return 0
+	if !(fieldOverrideReason = "None" || fieldOverrideReason = "Boost")
+		return 0
+	return nm_IsBoostLeaseGatherWindow() ? 1 : 0
+}
+
+nm_ShouldUseBoostLeaseForMondo(){
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, fieldOverrideReason
+
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0)
+		return 0
+	if !(fieldOverrideReason = "None" || fieldOverrideReason = "Boost")
+		return 0
+	leaseAge := nowUnix() - GatherFieldBoostedStart
+	return (leaseAge >= 840 && leaseAge < 900)
+}
+
+nm_HandleBoostLeaseGlitter(fieldName, sourceLabel := ""){
+	global GlitterKey, LastGlitter, GatherFieldBoostedStart, PFieldBoostExtend, fieldOverrideReason, BoostLeaseNearDiscordNotice, BoostLeaseGlitterUsed
+
+	if (BoostLeaseGlitterUsed || !nm_ShouldUseBoostLeaseForMondo())
+		return 0
+	BoostLeaseGlitterUsed := 1
+	PFieldBoostExtend := 1
+	LastGlitter := nowUnix()
+	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	nm_SpamGlitterKey()
+	nm_DebugGlitterPress((sourceLabel != "" ? sourceLabel : "Boost Lease"), fieldName)
+	fieldOverrideReason := "Boost"
+	BoostLeaseNearDiscordNotice := 0
+	IniWrite fieldName, "settings\nm_config.ini", "Boost", "LastBoostedField"
+	nm_ArmBoostLease(fieldName, 1, 0)
+	nm_RunPendingStickerStackAfterExtend()
+	if (sourceLabel != "")
+		nm_setStatus("Boosted", sourceLabel)
+	return 1
+}
+; BOOST LEASE HELPERS END

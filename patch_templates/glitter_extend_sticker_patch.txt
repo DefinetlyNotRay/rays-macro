@@ -1,0 +1,33 @@
+				; BOOST LEASE GATHER START
+				if nm_GetBoostLeaseGatherAction() {
+					nm_HandleBoostLeaseGlitter(FieldName, "Gather Lease")
+					return
+				}
+				; BOOST LEASE GATHER END
+				; BOOST LEASE STICKER START
+				; BOOST LEASE GATHER START
+				if nm_GetBoostLeaseGatherAction() {
+					nm_HandleBoostLeaseGlitter(FieldName, "Gather Lease")
+					return
+				}
+				; BOOST LEASE GATHER END
+				; BOOST LEASE STICKER START
+				; BOOST LEASE GATHER START
+				if nm_GetBoostLeaseGatherAction() {
+					nm_HandleBoostLeaseGlitter(FieldName, "Gather Lease")
+					return
+				}
+				; BOOST LEASE GATHER END
+				; BOOST LEASE STICKER START
+				if nm_StickerStackInterrupt() {
+					if nm_IsBoostLeaseNearWindow() {
+						PendingStickerStackAfterExtend := 1
+					} else {
+						Click "Up"
+						nm_endWalk()
+						nm_setShiftLock(0)
+						nm_HandleStickerStackInterrupt(1, 1, 1)
+						return
+					}
+				}
+				; BOOST LEASE STICKER END

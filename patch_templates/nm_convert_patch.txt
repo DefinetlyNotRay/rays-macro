@@ -1,0 +1,257 @@
+nm_convert(ignoreActiveConvertState := 0, forceBalloonConvert := 0){
+	global AFBrollingDice, AFBuseGlitter, AFBuseBooster, CurrentField, HiveConfirmed, EnzymesKey, LastEnzymes
+		, ConvertStartTime, TotalConvertTime, SessionConvertTime
+		, BackpackPercent, BackpackPercentFiltered
+		, PFieldBoosted, PFieldBoostExtend, GatherFieldBoosted, GatherFieldBoostedStart, LastGlitter, GlitterKey
+		, GameFrozenCounter, LastConvertBalloon, ConvertBalloon, ConvertMins, HiveBees, ConvertGatherFlag, LastStickerStackUse, LastStickerStack, StickerStackCheck, StickerStackTimer, DailyReconnectPending, ReconnectSyncBroadcastPending, EnzymesBoostedOnly
+
+	if (nm_NightInterrupt() || nm_MondoInterrupt())
+		return
+	if mondointerrupt_ShouldTrigger() {
+		mondointerrupt_Handle()
+		return
+	}
+	if nm_HandleStickerStackInterrupt(1, 0, 0)
+		return
+	if mondointerrupt_ShouldTrigger() {
+		mondointerrupt_Handle()
+		return
+	}
+	if nm_HandleStickerStackInterrupt(1, 0, 0)
+		return
+	if mondointerrupt_ShouldTrigger() {
+		mondointerrupt_Handle()
+		return
+	}
+	if nm_HandleStickerStackInterrupt(1, 0, 0)
+		return
+
+	hwnd := GetRobloxHWND()
+	offsetY := GetYOffset(hwnd)
+	GetRobloxClientPos(hwnd)
+	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|400|120")
+	if ((HiveConfirmed = 0) || (!ignoreActiveConvertState && state = "Converting") || (Gdip_ImageSearch(pBMScreen, bitmaps["e_button"], , , , , , 2, , 6) = 0)) {
+		Gdip_DisposeImage(pBMScreen)
+		return
+	}
+	if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) {
+		SendInput "{" SC_E " down}"
+		Sleep 100
+		SendInput "{" SC_E " up}"
+	}
+	Gdip_DisposeImage(pBMScreen)
+	ConvertStartTime:=nowUnix()
+	ConvertTraceStart:=A_TickCount
+	nm_ConvertTrace("Convert: start")
+	inactiveHoney:=0
+	ballooncomplete:=0
+	;empty pack
+	if (BackpackPercentFiltered > 0) {
+		nm_setStatus("Converting", "Backpack")
+		while (((BackpackConvertTime := nowUnix()-ConvertStartTime)<300) && (BackpackPercentFiltered>0)) { ;5 mins
+			loopTick := A_TickCount
+			nm_ConvertTrace("Backpack: loop tick start", loopTick)
+			Sleep 1000
+			nm_AutoFieldBoost(currentField)
+			nm_ConvertTrace("Backpack: AFB check done", loopTick)
+			if(AFBuseGlitter || AFBuseBooster) {
+				nm_setStatus("Interrupted", "AFB")
+				return
+			}
+			if (disconnectcheck()) {
+				return
+			}
+			nm_ConvertTrace("Backpack: disconnectcheck", loopTick)
+			if nm_HandleStickerStackInterrupt(1, 0, 0)
+				return
+			nm_ConvertTrace("Backpack: sticker stack check", loopTick)
+			; BOOST LEASE CONVERT START
+			nm_CheckBoostLeaseWarning()
+			if nm_GetBoostLeaseAction() {
+				nm_ConvertRenewGlitter(FieldName)
+			}
+			; BOOST LEASE CONVERT END
+			if mondointerrupt_ShouldTrigger() {
+				mondointerrupt_Handle()
+				return
+			}
+			nm_ConvertTrace("Backpack: checks complete", loopTick)
+			inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
+			if (BackpackConvertTime>60 && inactiveHoney>30) {
+				nm_setStatus("Interrupted", "Inactive Honey")
+				GameFrozenCounter++
+				return
+			}
+			GetRobloxClientPos(hwnd)
+			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|" windowWidth//2+200 "|" windowHeight-offsetY-36)
+			if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) {
+				SendInput "{" SC_E " down}"
+				Sleep 100
+				SendInput "{" SC_E " up}"
+			}
+			if ((Gdip_ImageSearch(pBMScreen, bitmaps["e_button"], , , , 400, 120, 2, , 6) = 0)
+				|| ((Gdip_ImageSearch(pBMScreen, bitmaps["hiveballoon"], , windowWidth//2, windowHeight-offsetY-36-400, , , 40, , 3) = 1) && (ballooncomplete:=1))) {
+				Gdip_DisposeImage(pBMScreen)
+				nm_ConvertTrace("Backpack: screen/image caused break", loopTick)
+				break
+			}
+			Gdip_DisposeImage(pBMScreen)
+			nm_ConvertTrace("Backpack: screen/image complete", loopTick)
+		}
+		duration := DurationFromSeconds(BackpackConvertTime, "mm:ss")
+		nm_setStatus("Converting", "Backpack Emptied`nTime: " duration)
+	}
+	;empty balloon
+	if(forceBalloonConvert || (ConvertBalloon="always") || (ConvertBalloon="Every" && (nowUnix() - LastConvertBalloon)>(ConvertMins*60)) || (ConvertBalloon="Gather" && (ConvertGatherFlag=1 || (nowUnix() - LastConvertBalloon)>2700))) {
+		ConvertGatherFlag := 0
+		;balloon check
+		strikes:=0
+		while ((strikes <= 5) && (A_Index <= 50)) {
+			loopTick := A_TickCount
+			nm_ConvertTrace("Balloon: refresh scan start", loopTick)
+			GetRobloxClientPos(hwnd)
+			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|" windowWidth//2+200 "|" windowHeight-offsetY-36)
+			if ((ballooncomplete = 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["hiveballoon"], , windowWidth//2, windowHeight-offsetY-36-400, , , 40, , 3) = 1)) {
+				Gdip_DisposeImage(pBMScreen)
+				nm_setStatus("Converting", "Balloon Refreshed")
+				IniWrite LastConvertBalloon:=nowUnix(), "settings\nm_config.ini", "Settings", "LastConvertBalloon"
+				PostSubmacroMessage("background", 0x5554, 6, LastConvertBalloon)
+				nm_ConvertTrace("Balloon: refresh detected", loopTick)
+				if nm_HandleStickerStackInterrupt(1, 0, 0)
+					return
+				nm_ConvertTrace("Balloon: sticker stack after refresh", loopTick)
+				strikes := 10
+				break
+			}
+			if (Gdip_ImageSearch(pBMScreen, bitmaps["e_button"], , , , 400, 120, 2, , 6) != 1)
+				strikes++
+			Gdip_DisposeImage(pBMScreen)
+			Sleep 100
+			nm_ConvertTrace("Balloon: refresh scan loop", loopTick)
+		}
+		if (strikes <= 5) {
+			BalloonStartTime:=nowUnix()
+			inactiveHoney:=0
+			nm_setStatus("Converting", "Balloon")
+			while((BalloonConvertTime := nowUnix()-BalloonStartTime)<600) { ;10 mins
+				loopTick := A_TickCount
+				nm_ConvertTrace("Balloon: loop tick start", loopTick)
+				nm_AutoFieldBoost(currentField)
+				nm_CheckBoostLeaseWarning()
+				nm_ConvertTrace("Balloon: AFB/boost checks complete", loopTick)
+				if(AFBuseGlitter || AFBuseBooster) {
+					nm_setStatus("Interrupted", "AFB")
+					return
+				}
+				if mondointerrupt_ShouldTrigger() {
+					mondointerrupt_Handle()
+					return
+				}
+				nm_ConvertTrace("Balloon: AFB/mondo checks complete", loopTick)
+				if nm_HandleStickerStackInterrupt(1, 0, 0)
+					return
+				nm_ConvertTrace("Balloon: sticker stack check", loopTick)
+				inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
+				if ((EnzymesKey != "none")
+					&& (!EnzymesBoostedOnly || nm_GatherBoostInterrupt())
+					&& (nowUnix() - LastEnzymes) > 600
+					&& (inactiveHoney = 0)) {
+					nm_setStatus("Converting", "Balloon`nUsed Enzyme")
+					Send "{" EnzymesKey "}"
+					LastEnzymes:=nowUnix()
+					IniWrite LastEnzymes, "settings\nm_config.ini", "Boost", "LastEnzymes"
+				}
+				nm_ConvertTrace("Balloon: enzyme/inactive checks complete", loopTick)
+				if (BalloonConvertTime>60 && inactiveHoney>30) {
+					nm_setStatus("Interrupted", "Inactive Honey")
+					GameFrozenCounter++
+					return
+				}
+				if (disconnectcheck()) {
+					return
+				}
+				nm_ConvertTrace("Balloon: disconnectcheck", loopTick)
+				if nm_HandleStickerStackInterrupt(1, 0, 0)
+					return
+				nm_ConvertTrace("Balloon: sticker stack check 2", loopTick)
+			; BOOST LEASE CONVERT START
+			nm_CheckBoostLeaseWarning()
+			if nm_GetBoostLeaseAction() {
+				nm_ConvertRenewGlitter(FieldName)
+			}
+			; BOOST LEASE CONVERT END
+				if mondointerrupt_ShouldTrigger() {
+					mondointerrupt_Handle()
+					return
+				}
+				nm_ConvertTrace("Balloon: boost lease check/renew", loopTick)
+				GetRobloxClientPos(hwnd)
+				nm_ConvertTrace("Balloon: client position", loopTick)
+				if (Mod(A_Index, 30) = 0) {
+					MouseMove windowX+windowWidth-30, windowY+offsetY+16
+					click
+				}
+				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|" windowWidth//2+200 "|" windowHeight-offsetY-36)
+				nm_ConvertTrace("Balloon: screenshot", loopTick)
+				if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) {
+					SendInput "{" SC_E " down}"
+					Sleep 100
+					SendInput "{" SC_E " up}"
+				}
+				nm_ConvertTrace("Balloon: makehoney check", loopTick)
+				if ((Gdip_ImageSearch(pBMScreen, bitmaps["e_button"], , , , 400, 120, 2, , 6) = 0)
+					|| (Gdip_ImageSearch(pBMScreen, bitmaps["hiveballoon"], , windowWidth//2, windowHeight-offsetY-36-400, , , 40, , 3) = 1)) {
+					Gdip_DisposeImage(pBMScreen)
+					ballooncomplete:=1
+					nm_ConvertTrace("Balloon: complete detected", loopTick)
+					if nm_HandleStickerStackInterrupt(1, 0, 0)
+						return
+					break
+				}
+				Gdip_DisposeImage(pBMScreen)
+				nm_ConvertTrace("Balloon: image checks complete", loopTick)
+				Loop 10 {
+					Sleep 100
+					if nm_HandleStickerStackInterrupt(1, 0, 0)
+						return
+				}
+				nm_ConvertTrace("Balloon: post-image sleep block", loopTick)
+			}
+			if(ballooncomplete){
+				duration := DurationFromSeconds(BalloonConvertTime, "mm:ss")
+				nm_setStatus("Converting", "Balloon Refreshed`nTime: " duration)
+				IniWrite LastConvertBalloon:=nowUnix(), "settings\nm_config.ini", "Settings", "LastConvertBalloon"
+				PostSubmacroMessage("background", 0x5554, 6, LastConvertBalloon)
+				nm_ConvertTrace("Balloon: refreshed bookkeeping", loopTick)
+			}
+		}
+	}
+	nm_ConvertTrace("Convert: end bookkeeping start", convertTraceStart)
+	TotalConvertTime:=TotalConvertTime+(nowUnix()-ConvertStartTime)
+	SessionConvertTime:=SessionConvertTime+(nowUnix()-ConvertStartTime)
+	ConvertStartTime:=0
+	nm_ConvertTrace("Convert: end bookkeeping complete", convertTraceStart)
+	if (DailyReconnectPending) {
+		nm_ConvertTrace("Convert: reconnect handoff entered", convertTraceStart)
+		FileAppend(A_Now " - DailyReconnect convert handoff entered`r`n", "settings\debug_log.txt", "UTF-8")
+		if (nm_GatherBoostInterrupt()) {
+			nm_ConvertTrace("Convert: reconnect waiting on boost", convertTraceStart)
+			FileAppend(A_Now " - DailyReconnect waiting on boost window`r`n", "settings\debug_log.txt", "UTF-8")
+			nm_setStatus("Waiting", "Boost before Reconnect")
+			return
+		}
+		DailyReconnectPending := 0
+		if (ReconnectSyncBroadcastPending) {
+			nm_ConvertTrace("Convert: reconnect sync broadcast", convertTraceStart)
+			ReconnectSyncBroadcastPending := 0
+			recon_NotifyReconnectSyncDisconnect()
+		}
+		nm_ConvertTrace("Convert: reconnect leaving now", convertTraceStart)
+		FileAppend(A_Now " - DailyReconnect leaving after convert`r`n", "settings\debug_log.txt", "UTF-8")
+		nm_setStatus("Closing", "Roblox, Daily Reconnect")
+		CloseRoblox()
+		nm_ConvertTrace("Convert: reconnect close requested", convertTraceStart)
+		FileAppend(A_Now " - DailyReconnect close requested`r`n", "settings\debug_log.txt", "UTF-8")
+		DisconnectCheck()
+	}
+}

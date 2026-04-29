@@ -7,8 +7,8 @@ mondointerrupt_ShouldTrigger() {
 		return false
 
 	utcMin := FormatTime(A_NowUTC, "m") + 0
-	; leave gather at :59, but only allow the late catch-up window once we are no longer gathering
-	isLateCatchup := (utcMin >= 0 && utcMin <= 14) && (state != "Gathering") && (state != "Searching")
+	; leave gather at :59, and also allow a catch-up window if the loop missed the exact minute
+	isLateCatchup := (utcMin >= 0 && utcMin <= 14)
 	return ((utcMin = 59) || isLateCatchup) && ((nowUnix() - LastMondoBuff) > 3300)
 }
 
@@ -31,6 +31,24 @@ mondointerrupt_ReturnToHiveAndConvert() {
 	return (findHiveSlot.MaxParams >= 2) ? findHiveSlot.Call(1, 1) : findHiveSlot.Call()
 }
 
+mondointerrupt_TryPreExitGlitter(fieldName) {
+	global GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason, BoostLeaseNearDiscordNotice
+
+	if !nm_IsBoostLeaseNearWindow()
+		return false
+
+	nm_SpamGlitterKey()
+	nm_DebugGlitterPress("Mondo Interrupt (Warning Window)", fieldName)
+	LastGlitter := nowUnix()
+	GatherFieldBoostedStart := LastGlitter
+	fieldOverrideReason := "Boost"
+	BoostLeaseNearDiscordNotice := 0
+	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	IniWrite fieldName, "settings\nm_config.ini", "Boost", "LastBoostedField"
+	IniWrite GatherFieldBoostedStart, "settings\nm_config.ini", "Boost", "LastBoostedTime"
+	return true
+}
+
 mondointerrupt_Handle() {
 	global youDied, MondoSecs, CurrentField, LastMondoBuff
 	global AFBrollingDice, AFBuseGlitter, AFBuseBooster
@@ -39,6 +57,7 @@ mondointerrupt_Handle() {
 		return false
 
 	nm_updateAction("Mondo Interrupt")
+	mondointerrupt_TryPreExitGlitter(CurrentField)
 	nm_setStatus("Traveling", "Mondo Interrupt (Mountain Top)")
 	nm_Reset(0, 2000, 0)
 	nm_gotoField("Mountain Top")

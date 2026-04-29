@@ -1,0 +1,5 @@
+				; BOOST LEASE GATHER START
+				if nm_GetBoostLeaseGatherAction() {
+					nm_HandleBoostLeaseGlitter(FieldName, "Gather Lease")
+				}
+				; BOOST LEASE GATHER END

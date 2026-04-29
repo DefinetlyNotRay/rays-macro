@@ -1,0 +1,97 @@
+nm_StickerStackEnabled() {
+	global MainGui, StickerStackCheck
+	try return !!(StickerStackCheck && MainGui["StickerStackCheck"].Value)
+	catch
+		return !!StickerStackCheck
+}
+nm_StickerStackReady() {
+	global LastStickerStack, LastStickerStackUse, StickerStackTimer, ForceStickerStackInterrupt, StickerStackFlowTestActive
+	if IsSet(StickerStackFlowTestActive) && StickerStackFlowTestActive
+		return 0
+	if (ForceStickerStackInterrupt) {
+		ToolTip "Sticker Stack: FORCED", 0, 0, 2
+		if !nm_StickerStackEnabled()
+			return 0
+		return 1
+	}
+	if (LastStickerStack = 0) {
+		ToolTip "Sticker Stack: READY", 0, 0, 2
+	} else {
+		stackTimeLeft := StickerStackTimer - (nowUnix() - LastStickerStack)
+		if (stackTimeLeft > 0) {
+			ToolTip "Sticker Stack: " Floor(stackTimeLeft/60) "m " Mod(stackTimeLeft,60) "s", 0, 0, 2
+			return 0
+		}
+		ToolTip "Sticker Stack: READY", 0, 0, 2
+	}
+	if !nm_StickerStackEnabled()
+		return 0
+	if (IsSet(MainGui) && IsObject(MainGui) && !MainGui["StickerStackInterruptCheck"].Value)
+		return 0
+	if ((nowUnix() - LastStickerStackUse) < 60)
+		return 0
+	return 1
+}
+nm_StickerStackInterrupt() => nm_StickerStackEnabled() && nm_StickerStackReady()
+
+nm_StickerStackInterruptEnabled() {
+	global MainGui, LastStickerStack, LastStickerStackUse, StickerStackTimer, StickerStackCheck, ForceStickerStackInterrupt
+	interruptEnabled := (IsSet(MainGui) && IsObject(MainGui)) ? MainGui["StickerStackInterruptCheck"].Value : "?"
+	forceAllowed := ForceStickerStackInterrupt && (StickerStackCheck = 1) && (interruptEnabled = 1)
+	if (ForceStickerStackInterrupt) {
+		ToolTip "Sticker Stack: FORCED", 0, 0, 2
+		if (!forceAllowed)
+			return 0
+		return 1
+	}
+	if (LastStickerStack = 0) {
+		ToolTip "Sticker Stack: READY", 0, 0, 2
+	} else {
+		stackTimeLeft := StickerStackTimer - (nowUnix() - LastStickerStack)
+		if (stackTimeLeft > 0) {
+			ToolTip "Sticker Stack: " Floor(stackTimeLeft/60) "m " Mod(stackTimeLeft,60) "s", 0, 0, 2
+			return 0
+		}
+		ToolTip "Sticker Stack: READY", 0, 0, 2
+	}
+	if (!StickerStackCheck || !MainGui["StickerStackInterruptCheck"].Value)
+		return 0
+	if ((nowUnix() - LastStickerStackUse) < 60)
+		return 0
+	return 1
+}
+
+nm_HandleStickerStackInterrupt(convertAfter := 1, allowEmergencyGlitter := 0, resetBeforeStack := 1) {
+	global LastStickerStackUse, LastGlitter, GatherFieldBoostedStart, GlitterKey, fieldOverrideReason, PFieldBoosted, ForceStickerStackInterrupt, HiveConfirmed, bitmaps, state, objective, ConvertGatherFlag, SkipBoostStickerStackUntil, AFBuseGlitter
+	static handling := 0
+	if (handling || !nm_StickerStackInterrupt())
+		return 0
+	prevState := state
+	prevObjective := objective
+	resumeBalloonConvert := (prevState = "Converting") && InStr(prevObjective, "Balloon")
+	handling := 1
+	if (AFBuseGlitter) {
+		nm_setStatus("Priority", "Boosting Field: Glitter")
+		nm_fieldBoostGlitter()
+	}
+	LastStickerStackUse := nowUnix()
+	IniWrite LastStickerStackUse, "settings\nm_config.ini", "Boost", "LastStickerStackUse"
+	nm_setStatus("Emergency", "Sticker Stack Ready")
+	stackSucceeded := nm_StickerStack(resetBeforeStack)
+	ForceStickerStackInterrupt := 0
+	if (stackSucceeded)
+		SkipBoostStickerStackUntil := nowUnix() + 180
+	if (convertAfter) {
+		nm_setStatus("Priority", "Resetting to Hive for Convert after Stack")
+		nm_Reset(2, 2000, 0, 1)
+		if (resumeBalloonConvert)
+			ConvertGatherFlag := 1
+		if !nm_findHiveSlot(1, resumeBalloonConvert)
+			nm_setStatus("Failed", resumeBalloonConvert ? "Could not resume Balloon Convert after Stack" : "Could not confirm hive after Stack")
+	} else {
+		nm_setStatus("Traveling", "Returning to Hive post-Stack")
+		nm_Reset(2, 2000, 0, 1)
+	}
+	handling := 0
+	return 1
+}
