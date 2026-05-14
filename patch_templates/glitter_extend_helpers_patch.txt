@@ -180,12 +180,12 @@ nm_IsBoostLeaseGatherWindow(){
 }
 
 nm_IsBoostLeaseNearWindow(sec := 60){
-	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, BoostLeaseNearDiscordNotice
+	global GatherFieldBoostedStart, GlitterKey, PFieldBoosted, BoostLeaseNearDiscordNotice, LastGlitter
 
-	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0)
+	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0 || (nowUnix() - LastGlitter) <= 900)
 		return 0
 	leaseAge := nowUnix() - GatherFieldBoostedStart
-	if (leaseAge >= (840 - sec) && leaseAge < 840) {
+	if (leaseAge >= 840 && leaseAge < 900) {
 		if (!BoostLeaseNearDiscordNotice) {
 			BoostLeaseNearDiscordNotice := 1
 			nm_NotifyBoostLeaseDiscord("Near Glitter Phase", "Entered the near-glitter warning window")

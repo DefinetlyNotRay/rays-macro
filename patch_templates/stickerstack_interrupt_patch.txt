@@ -5,7 +5,7 @@ nm_StickerStackEnabled() {
 		return !!StickerStackCheck
 }
 nm_StickerStackReady() {
-	global LastStickerStack, LastStickerStackUse, StickerStackTimer, ForceStickerStackInterrupt, StickerStackFlowTestActive
+	global LastStickerStack, LastStickerStackFail, LastStickerStackUse, StickerStackTimer, ForceStickerStackInterrupt, StickerStackFlowTestActive
 	if IsSet(StickerStackFlowTestActive) && StickerStackFlowTestActive
 		return 0
 	if (ForceStickerStackInterrupt) {
@@ -28,6 +28,13 @@ nm_StickerStackReady() {
 		return 0
 	if (IsSet(MainGui) && IsObject(MainGui) && !MainGui["StickerStackInterruptCheck"].Value)
 		return 0
+	if (LastStickerStackFail > 0) {
+		stackFailTimeLeft := 15 - (nowUnix() - LastStickerStackFail)
+		if (stackFailTimeLeft > 0) {
+			ToolTip "Sticker Stack: Retry " stackFailTimeLeft "s", 0, 0, 2
+			return 0
+		}
+	}
 	if ((nowUnix() - LastStickerStackUse) < 60)
 		return 0
 	return 1
@@ -35,7 +42,7 @@ nm_StickerStackReady() {
 nm_StickerStackInterrupt() => nm_StickerStackEnabled() && nm_StickerStackReady()
 
 nm_StickerStackInterruptEnabled() {
-	global MainGui, LastStickerStack, LastStickerStackUse, StickerStackTimer, StickerStackCheck, ForceStickerStackInterrupt
+	global MainGui, LastStickerStack, LastStickerStackFail, LastStickerStackUse, StickerStackTimer, StickerStackCheck, ForceStickerStackInterrupt
 	interruptEnabled := (IsSet(MainGui) && IsObject(MainGui)) ? MainGui["StickerStackInterruptCheck"].Value : "?"
 	forceAllowed := ForceStickerStackInterrupt && (StickerStackCheck = 1) && (interruptEnabled = 1)
 	if (ForceStickerStackInterrupt) {
@@ -56,13 +63,20 @@ nm_StickerStackInterruptEnabled() {
 	}
 	if (!StickerStackCheck || !MainGui["StickerStackInterruptCheck"].Value)
 		return 0
+	if (LastStickerStackFail > 0) {
+		stackFailTimeLeft := 15 - (nowUnix() - LastStickerStackFail)
+		if (stackFailTimeLeft > 0) {
+			ToolTip "Sticker Stack: Retry " stackFailTimeLeft "s", 0, 0, 2
+			return 0
+		}
+	}
 	if ((nowUnix() - LastStickerStackUse) < 60)
 		return 0
 	return 1
 }
 
 nm_HandleStickerStackInterrupt(convertAfter := 1, allowEmergencyGlitter := 0, resetBeforeStack := 1) {
-	global LastStickerStackUse, LastGlitter, GatherFieldBoostedStart, GlitterKey, fieldOverrideReason, PFieldBoosted, ForceStickerStackInterrupt, HiveConfirmed, bitmaps, state, objective, ConvertGatherFlag, SkipBoostStickerStackUntil, AFBuseGlitter
+	global LastStickerStackUse, LastStickerStackFail, LastGlitter, GatherFieldBoostedStart, GlitterKey, fieldOverrideReason, PFieldBoosted, ForceStickerStackInterrupt, HiveConfirmed, bitmaps, state, objective, ConvertGatherFlag, SkipBoostStickerStackUntil, AFBuseGlitter, PendingStickerStackAfterExtend
 	static handling := 0
 	if (handling || !nm_StickerStackInterrupt())
 		return 0
@@ -74,23 +88,29 @@ nm_HandleStickerStackInterrupt(convertAfter := 1, allowEmergencyGlitter := 0, re
 		nm_setStatus("Priority", "Boosting Field: Glitter")
 		nm_fieldBoostGlitter()
 	}
-	LastStickerStackUse := nowUnix()
-	IniWrite LastStickerStackUse, "settings\nm_config.ini", "Boost", "LastStickerStackUse"
+	PendingStickerStackAfterExtend := 0
 	nm_setStatus("Emergency", "Sticker Stack Ready")
 	stackSucceeded := nm_StickerStack(resetBeforeStack)
 	ForceStickerStackInterrupt := 0
-	if (stackSucceeded)
+	if (stackSucceeded) {
+		LastStickerStackUse := nowUnix()
+		IniWrite LastStickerStackUse, "settings\nm_config.ini", "Boost", "LastStickerStackUse"
 		SkipBoostStickerStackUntil := nowUnix() + 180
-	if (convertAfter) {
-		nm_setStatus("Priority", "Resetting to Hive for Convert after Stack")
-		nm_Reset(2, 2000, 0, 1)
-		if (resumeBalloonConvert)
-			ConvertGatherFlag := 1
-		if !nm_findHiveSlot(1, resumeBalloonConvert)
-			nm_setStatus("Failed", resumeBalloonConvert ? "Could not resume Balloon Convert after Stack" : "Could not confirm hive after Stack")
+		if (convertAfter) {
+			nm_setStatus("Priority", "Resetting to Hive for Convert after Stack")
+			nm_Reset(2, 2000, 0, 1)
+			if (resumeBalloonConvert)
+				ConvertGatherFlag := 1
+			if !nm_findHiveSlot(1, resumeBalloonConvert)
+				nm_setStatus("Failed", resumeBalloonConvert ? "Could not resume Balloon Convert after Stack" : "Could not confirm hive after Stack")
+		} else {
+			nm_setStatus("Traveling", "Returning to Hive post-Stack")
+			nm_Reset(2, 2000, 0, 1)
+		}
 	} else {
-		nm_setStatus("Traveling", "Returning to Hive post-Stack")
-		nm_Reset(2, 2000, 0, 1)
+		LastStickerStackFail := nowUnix()
+		IniWrite LastStickerStackFail, "settings\nm_config.ini", "Boost", "LastStickerStackFail"
+		nm_setStatus("Failed", "Sticker Stack Failed")
 	}
 	handling := 0
 	return 1

@@ -38,6 +38,59 @@ StrJoin(items, sep := ", ") {
     return out
 }
 
+HasAllNeedles(text, needles) {
+    for _, needle in needles {
+        if !InStr(text, needle)
+            return false
+    }
+    return true
+}
+
+GetMissingNeedles(text, needles) {
+    missing := []
+    for _, needle in needles {
+        if !InStr(text, needle)
+            missing.Push(needle)
+    }
+    return missing
+}
+
+GetPresetCyclePatchStatus(text, helperNeedles) {
+    status := Map()
+    status["helperPresent"] := HasAllNeedles(text, helperNeedles)
+    status["runtimeNeedle"] := "`t;stats`r`n`tnm_setStats()`r`n`tnm_PresetCycleTick()"
+    status["startNeedle"] := "MacroState:=2`r`n	nm_PresetCycleUpdateStateText()"
+    status["pauseNeedle"] := "MacroState:=1`r`n		nm_PresetCycleUpdateStateText()"
+    status["stopNeedle"] := "MacroState:=0`r`n	nm_PresetCycleUpdateStateText()"
+    status["complete"] := (
+        status["helperPresent"]
+        && InStr(text, status["runtimeNeedle"])
+        && InStr(text, status["startNeedle"])
+        && InStr(text, status["pauseNeedle"])
+        && InStr(text, status["stopNeedle"])
+    )
+    status["incomplete"] := !status["complete"] && (
+        InStr(text, 'nm_PresetCycleGUI(*){}')
+        || InStr(text, 'nm_PresetCycleApplyNow(*) {')
+        || InStr(text, 'nm_PresetCycleTick()')
+        || InStr(text, 'nm_PresetCycleUpdateStateText()')
+        || InStr(text, status["runtimeNeedle"])
+        || InStr(text, status["startNeedle"])
+        || InStr(text, status["pauseNeedle"])
+        || InStr(text, status["stopNeedle"])
+    )
+    status["missing"] := GetMissingNeedles(text, helperNeedles)
+    if !InStr(text, status["runtimeNeedle"])
+        status["missing"].Push(status["runtimeNeedle"])
+    if !InStr(text, status["startNeedle"])
+        status["missing"].Push(status["startNeedle"])
+    if !InStr(text, status["pauseNeedle"])
+        status["missing"].Push(status["pauseNeedle"])
+    if !InStr(text, status["stopNeedle"])
+        status["missing"].Push(status["stopNeedle"])
+    return status
+}
+
 ReplaceFirst(text, oldText, newText) {
     pos := InStr(text, oldText)
     if !pos
@@ -1452,7 +1505,24 @@ if FileExist(natroPath) {
         }
     }
     ; 1c4. Preset cycle dialog and helper functions
-    if false && !InStr(c, 'nm_PresetCycleApplyNow(*) {') && InStr(c, 'nm_PresetCycleGUI(*){}') {
+    presetCycleHelperNeedles := [
+        'nm_PresetCycleGUI(*) {',
+        'nm_PresetCycleLaunch(*) {',
+        'nm_PresetCycleGuiClose(*) {',
+        'nm_PresetCycleSyncGui(*) {',
+        'nm_PresetCycleUpdateStateText(*) {',
+        'nm_PresetCycleSave(GuiCtrl?, *) {',
+        'nm_PresetCycleBrowse(GuiCtrl, *) {',
+        'nm_PresetCycleClear(GuiCtrl, *) {',
+        'nm_PresetCycleApplyNow(*) {',
+        'nm_PresetCycleNormalizePresetId(value) {',
+        'nm_PresetCycleNormalizeActiveSlot(value) {',
+        'nm_PresetCycleApplyPreset(presetId) {',
+        'nm_PresetCycleTick(force := 0) {'
+    ]
+    presetCycleHelperPresent := HasAllNeedles(c, presetCycleHelperNeedles)
+    presetCycleHelperMarkersPresent := InStr(c, 'nm_PresetCycleGUI(*){}') || InStr(c, 'nm_PresetCycleApplyNow(*) {') || InStr(c, 'nm_PresetCycleTick()') || InStr(c, 'nm_PresetCycleUpdateStateText()')
+    if !presetCycleHelperPresent && (InStr(c, 'nm_PresetCycleGUI(*){}') || InStr(c, 'nm_AutoStartManager(*){')) {
         presetCycleDialogBlock := JoinLines(
             'nm_PresetCycleGUI(*) {',
             '	global MainGui, PresetCycleGui, PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
@@ -1498,7 +1568,7 @@ if FileExist(natroPath) {
             '	} catch as err {',
             '		PresetCycleGui := ""',
             '		nm_setStatus("Preset Cycle", "Open failed")',
-            '		MsgBox("Preset Cycle dialog failed to open.`n`n" err.Message, "Preset Cycle", 0x10)',
+            '		MsgBox("Preset Cycle dialog failed to open.``n``n" err.Message, "Preset Cycle", 0x10)',
             '	}',
             '}',
             'nm_PresetCycleLaunch(*) {',
@@ -1724,88 +1794,108 @@ if FileExist(natroPath) {
             '	return 1',
             '}'
         )
-        cNew := StrReplace(c, 'nm_PresetCycleGUI(*){}', presetCycleDialogBlock)
+        if InStr(c, 'nm_PresetCycleGUI(*){}') {
+            cNew := StrReplace(c, 'nm_PresetCycleGUI(*){}', presetCycleDialogBlock)
+        } else {
+            cNew := StrReplace(c, 'nm_AutoStartManager(*){', presetCycleDialogBlock "`r`n`r`nnm_AutoStartManager(*){")
+        }
         if (cNew != c) {
             c := cNew
-            FileAppend("? Added preset cycle dialog and helper functions`n", logFile)
+            presetCycleHelperPresent := HasAllNeedles(c, presetCycleHelperNeedles)
+            if (presetCycleHelperPresent) {
+                FileAppend("? Added preset cycle dialog and helper functions`n", logFile)
+            } else {
+                missingPresetCycleNeedles := GetMissingNeedles(c, presetCycleHelperNeedles)
+                FileAppend("! Preset cycle helper insertion completed but validation failed; missing: " StrJoin(missingPresetCycleNeedles, ", ") "`n", logFile)
+            }
         } else {
-            FileAppend("! Preset cycle dialog insertion skipped; stub anchor not found`n", logFile)
+            FileAppend("! Preset cycle dialog insertion skipped; no anchor found`n", logFile)
         }
-    } else if InStr(c, 'nm_PresetCycleApplyNow(*) {') {
+    } else if presetCycleHelperPresent {
         FileAppend("? Preset cycle dialog and helper functions already present`n", logFile)
+    } else if presetCycleHelperMarkersPresent {
+        FileAppend("! Preset cycle patch is partially present but helper block is incomplete`n", logFile)
     }
     ; 1c4a. Preset cycle runtime hook
-    if !InStr(c, 'nm_PresetCycleTick()') && InStr(c, 'Background(){') && InStr(c, 'nm_setStats()') {
-        backgroundNeedle := "`t;stats`r`n`tnm_setStats()"
-        backgroundInsert := "`t;stats`r`n`tnm_setStats()`r`n`tnm_PresetCycleTick()"
-        cNew := StrReplace(c, backgroundNeedle, backgroundInsert)
-        if (cNew != c) {
-            c := cNew
-            FileAppend("? Added preset cycle runtime hook to Background()`n", logFile)
-        } else {
-            FileAppend("! Preset cycle runtime hook skipped; background anchor not found`n", logFile)
+    if presetCycleHelperPresent {
+        if !InStr(c, 'nm_PresetCycleTick()') && InStr(c, 'Background(){') && InStr(c, 'nm_setStats()') {
+            backgroundNeedle := "`t;stats`r`n`tnm_setStats()"
+            backgroundInsert := "`t;stats`r`n`tnm_setStats()`r`n`tnm_PresetCycleTick()"
+            cNew := StrReplace(c, backgroundNeedle, backgroundInsert)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Added preset cycle runtime hook to Background()`n", logFile)
+            } else {
+                FileAppend("! Preset cycle runtime hook skipped; background anchor not found`n", logFile)
+            }
+        } else if InStr(c, 'nm_PresetCycleTick()') {
+            FileAppend("? Preset cycle runtime hook already present`n", logFile)
         }
-    } else if InStr(c, 'nm_PresetCycleTick()') {
-        FileAppend("? Preset cycle runtime hook already present`n", logFile)
+    } else if presetCycleHelperMarkersPresent {
+        FileAppend("! Preset cycle runtime hook skipped until helper block is repaired`n", logFile)
     }
     ; 1c4b. Preset cycle state refresh on macro transitions
-    startStateNeedle := JoinLines(
-        '	DetectHiddenWindows 1',
-        '	MacroState:=2',
-        '	if WinExist("Status.ahk ahk_class AutoHotkey")'
-    )
-    startStateInsert := JoinLines(
-        '	DetectHiddenWindows 1',
-        '	MacroState:=2',
-        '	nm_PresetCycleUpdateStateText()',
-        '	if WinExist("Status.ahk ahk_class AutoHotkey")'
-    )
-    if !InStr(c, 'MacroState:=2`r`n	nm_PresetCycleUpdateStateText()') && InStr(c, startStateNeedle) {
-        cNew := StrReplace(c, startStateNeedle, startStateInsert)
-        if (cNew != c) {
-            c := cNew
-            FileAppend("? Added preset cycle state refresh on macro start`n", logFile)
+    if presetCycleHelperPresent {
+        startStateNeedle := JoinLines(
+            '	DetectHiddenWindows 1',
+            '	MacroState:=2',
+            '	if WinExist("Status.ahk ahk_class AutoHotkey")'
+        )
+        startStateInsert := JoinLines(
+            '	DetectHiddenWindows 1',
+            '	MacroState:=2',
+            '	nm_PresetCycleUpdateStateText()',
+            '	if WinExist("Status.ahk ahk_class AutoHotkey")'
+        )
+        if !InStr(c, 'MacroState:=2`r`n	nm_PresetCycleUpdateStateText()') && InStr(c, startStateNeedle) {
+            cNew := StrReplace(c, startStateNeedle, startStateInsert)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Added preset cycle state refresh on macro start`n", logFile)
+            }
+        } else if InStr(c, 'MacroState:=2`r`n	nm_PresetCycleUpdateStateText()') {
+            FileAppend("? Preset cycle state refresh on macro start already present`n", logFile)
         }
-    } else if InStr(c, 'MacroState:=2`r`n	nm_PresetCycleUpdateStateText()') {
-        FileAppend("? Preset cycle state refresh on macro start already present`n", logFile)
-    }
-    pauseStateNeedle := JoinLines(
-        '		MacroState:=1',
-        '		if WinExist("Status.ahk ahk_class AutoHotkey")'
-    )
-    pauseStateInsert := JoinLines(
-        '		MacroState:=1',
-        '		nm_PresetCycleUpdateStateText()',
-        '		if WinExist("Status.ahk ahk_class AutoHotkey")'
-    )
-    if !InStr(c, 'MacroState:=1`r`n		nm_PresetCycleUpdateStateText()') && InStr(c, pauseStateNeedle) {
-        cNew := StrReplace(c, pauseStateNeedle, pauseStateInsert)
-        if (cNew != c) {
-            c := cNew
-            FileAppend("? Added preset cycle state refresh on macro pause`n", logFile)
+        pauseStateNeedle := JoinLines(
+            '		MacroState:=1',
+            '		if WinExist("Status.ahk ahk_class AutoHotkey")'
+        )
+        pauseStateInsert := JoinLines(
+            '		MacroState:=1',
+            '		nm_PresetCycleUpdateStateText()',
+            '		if WinExist("Status.ahk ahk_class AutoHotkey")'
+        )
+        if !InStr(c, 'MacroState:=1`r`n		nm_PresetCycleUpdateStateText()') && InStr(c, pauseStateNeedle) {
+            cNew := StrReplace(c, pauseStateNeedle, pauseStateInsert)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Added preset cycle state refresh on macro pause`n", logFile)
+            }
+        } else if InStr(c, 'MacroState:=1`r`n		nm_PresetCycleUpdateStateText()') {
+            FileAppend("? Preset cycle state refresh on macro pause already present`n", logFile)
         }
-    } else if InStr(c, 'MacroState:=1`r`n		nm_PresetCycleUpdateStateText()') {
-        FileAppend("? Preset cycle state refresh on macro pause already present`n", logFile)
-    }
-    stopStateNeedle := JoinLines(
-        '	DetectHiddenWindows 1',
-        '	MacroState:=0',
-        '	Reload'
-    )
-    stopStateInsert := JoinLines(
-        '	DetectHiddenWindows 1',
-        '	MacroState:=0',
-        '	nm_PresetCycleUpdateStateText()',
-        '	Reload'
-    )
-    if !InStr(c, 'MacroState:=0`r`n	nm_PresetCycleUpdateStateText()') && InStr(c, stopStateNeedle) {
-        cNew := StrReplace(c, stopStateNeedle, stopStateInsert)
-        if (cNew != c) {
-            c := cNew
-            FileAppend("? Added preset cycle state refresh on macro stop`n", logFile)
+        stopStateNeedle := JoinLines(
+            '	DetectHiddenWindows 1',
+            '	MacroState:=0',
+            '	Reload'
+        )
+        stopStateInsert := JoinLines(
+            '	DetectHiddenWindows 1',
+            '	MacroState:=0',
+            '	nm_PresetCycleUpdateStateText()',
+            '	Reload'
+        )
+        if !InStr(c, 'MacroState:=0`r`n	nm_PresetCycleUpdateStateText()') && InStr(c, stopStateNeedle) {
+            cNew := StrReplace(c, stopStateNeedle, stopStateInsert)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Added preset cycle state refresh on macro stop`n", logFile)
+            }
+        } else if InStr(c, 'MacroState:=0`r`n	nm_PresetCycleUpdateStateText()') {
+            FileAppend("? Preset cycle state refresh on macro stop already present`n", logFile)
         }
-    } else if InStr(c, 'MacroState:=0`r`n	nm_PresetCycleUpdateStateText()') {
-        FileAppend("? Preset cycle state refresh on macro stop already present`n", logFile)
+    } else if presetCycleHelperMarkersPresent {
+        FileAppend("! Preset cycle state refresh skipped until helper block is repaired`n", logFile)
     }
     ; 1c5. StatMonitor booster stats bundle
     if (patchForceHourly || patchStatMonitorTheme) {
@@ -1949,7 +2039,7 @@ if FileExist(natroPath) {
     if (patchStickerStack) {
     if !InStr(c, '"StickerStackInterruptCheck"') {
         stickerConfigPattern := 'm)^(\s*, "StickerStackVoucher", [^\r\n]+)(\))$'
-        stickerConfigReplacement := '$1`r`n`t`t, "StickerStackInterruptCheck", 1`r`n`t`t, "LastStickerStackUse", 1$2'
+        stickerConfigReplacement := '$1`r`n`t`t, "StickerStackInterruptCheck", 1`r`n`t`t, "LastStickerStackUse", 1`r`n`t`t, "LastStickerStackFail", 1$2'
         cNew := RegExReplace(c, stickerConfigPattern, stickerConfigReplacement, &stickerConfigCount, 1)
         if (stickerConfigCount > 0 && cNew != c) {
             c := cNew
@@ -3369,6 +3459,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
     c := EnsureConfigMapEntry(c, "Boost", "LastBlueBoostUse", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "StickerStackInterruptCheck", patchStickerStack ? 1 : 0, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackUse", 1, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackFail", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Extensions", "MondoInterruptCheck", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Extensions", "EnzymesBoostedOnly", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Extensions", "ReconnectSyncCheck", 1, &mapChanged)
@@ -4675,6 +4766,17 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
             c := NormalizeDuplicateFunction(c, "nm_ForceStickerStack")
             c := NormalizeDuplicateFunction(c, "nm_ForceBlueBooster")
 
+            presetCycleStatus := GetPresetCyclePatchStatus(c, presetCycleHelperNeedles)
+            presetCyclePatchComplete := presetCycleStatus["complete"]
+            presetCyclePatchIncomplete := presetCycleStatus["incomplete"]
+            if (presetCyclePatchIncomplete) {
+                missingPresetCycleNeedles := presetCycleStatus["missing"]
+                try FileAppend("! Preset cycle patch incomplete after repair attempts; missing: " StrJoin(missingPresetCycleNeedles, ", ") "`n", logFile)
+                msg .= "! Preset cycle patch incomplete after repair attempts; skipping natro write`n"
+            } else if (presetCyclePatchComplete) {
+                try FileAppend("? Preset cycle patch verified complete`n", logFile)
+            }
+
             tempNat := natroPath ".tmp"
 
             ; Attempt to write temp file with retries, then fallback to no-encoding append
@@ -4710,6 +4812,12 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
                     }
                 }
             }
+
+    if (writeTempOk) {
+        if (presetCyclePatchIncomplete) {
+            writeTempOk := false
+        }
+    }
 
     if (writeTempOk) {
         validationOk := true
@@ -6093,6 +6201,7 @@ if FileExist(configPath) {
     if patchStickerStack {
         c := EnsureIniKey(c, "Boost", "StickerStackInterruptCheck", 1, &cfgChanged)
         c := EnsureIniKey(c, "Boost", "LastStickerStackUse", 1, &cfgChanged)
+        c := EnsureIniKey(c, "Boost", "LastStickerStackFail", 1, &cfgChanged)
     } else {
         c := SetIniSectionKey(c, "Boost", "StickerStackInterruptCheck", 0, &cfgChanged)
     }
