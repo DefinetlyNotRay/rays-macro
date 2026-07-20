@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 SetWorkingDir A_ScriptDir
 ; Made by @definetlynotray on discord
@@ -953,6 +953,27 @@ if FileExist(natroPath) {
     }
 
     ; 1c. HotbarWhileList
+    hotbarListHasWhileBoosted := false
+    hotbarListHasBoosted := false
+    if RegExMatch(c, 'm)^hotbarwhilelist\s*:=\s*\[(?<list>[^\]]*)\]', &hotbarMatch) {
+        hotbarListHasWhileBoosted := InStr(hotbarMatch["list"], '"WhileBoosted"') > 0
+        hotbarListHasBoosted := InStr(hotbarMatch["list"], '"Boosted"') > 0
+    }
+    if !hotbarListHasWhileBoosted {
+        if hotbarListHasBoosted {
+            cNew := RegExReplace(c, 'm)^hotbarwhilelist\s*:=\s*\[\s*"Never"\s*,\s*"Always"\s*,\s*"Boosted"(\s*,)', 'hotbarwhilelist := ["Never","Always","WhileBoosted"$1', , 1)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("Normalized legacy boosted hotbar label to WhileBoosted`n", logFile)
+            }
+        } else {
+            cNew := RegExReplace(c, 'm)^(hotbarwhilelist\s*:=\s*\[\s*"Never"\s*,\s*"Always")(\s*,)', '$1,"WhileBoosted"$2', , 1)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("Added WhileBoosted to hotbarwhilelist`n", logFile)
+            }
+        }
+    }
         if (patchGlitterExtend) {
             hotbarListHasGlitter := false
             if RegExMatch(c, 'm)^hotbarwhilelist\s*:=\s*\[(?<list>[^\]]*)\]', &hotbarMatch)
@@ -967,6 +988,60 @@ if FileExist(natroPath) {
         }
     }
 
+
+    if !InStr(c, 'GatherFieldBoosted, beesmasActive, QuestBoostCheck') && InStr(c, 'beesmasActive, QuestBoostCheck') {
+        cNew := StrReplace(c, ', beesmasActive, QuestBoostCheck', ', GatherFieldBoosted, beesmasActive, QuestBoostCheck')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added GatherFieldBoosted to nm_hotbar globals`n", logFile)
+        }
+    }
+    if !InStr(c, 'whileNames:=["Always", "WhileBoosted", "Attacking", "Gathering", "At Hive", "GatherStart"]') && InStr(c, 'whileNames:=["Always", "Attacking", "Gathering", "At Hive", "GatherStart"]') {
+        cNew := StrReplace(c, 'whileNames:=["Always", "Attacking", "Gathering", "At Hive", "GatherStart"]', 'whileNames:=["Always", "WhileBoosted", "Attacking", "Gathering", "At Hive", "GatherStart"]')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added WhileBoosted to whileNames`n", logFile)
+        }
+    }
+    if InStr(c, 'whileNames:=["Always", "Boosted", "Attacking", "Gathering", "At Hive", "GatherStart"]') && !InStr(c, 'whileNames:=["Always", "WhileBoosted", "Attacking", "Gathering", "At Hive", "GatherStart"]') {
+        cNew := StrReplace(c, 'whileNames:=["Always", "Boosted", "Attacking", "Gathering", "At Hive", "GatherStart"]', 'whileNames:=["Always", "WhileBoosted", "Attacking", "Gathering", "At Hive", "GatherStart"]')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Normalized legacy boosted whileNames entry to WhileBoosted`n", logFile)
+        }
+    }
+    if InStr(c, 'hotbarwhilelist := ["Never","Always","WhileBoosted","Boosted"') && !InStr(c, 'hotbarwhilelist := ["Never","Always","WhileBoosted","At Hive"') {
+        cNew := StrReplace(c, 'hotbarwhilelist := ["Never","Always","WhileBoosted","Boosted","At Hive","Gathering","Attacking","Microconverter","Whirligig","Enzymes","GatherStart","Snowflake","Glitter"]', 'hotbarwhilelist := ["Never","Always","WhileBoosted","At Hive","Gathering","Attacking","Microconverter","Whirligig","Enzymes","GatherStart","Snowflake","Glitter"]')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Normalized legacy Boosted hotbar list entry out of hotbarwhilelist`n", logFile)
+        }
+    }
+    if !InStr(c, 'nm_GatherBoostInterrupt() && (ActiveHotkeys[key][1]="WhileBoosted")') && InStr(c, ';snowflake') {
+        boostHotbarPattern := '(?ms)^(\t\t;at hive\r?\n\t\telse if\(state="Converting" && ActiveHotkeys\[key\]\[1\]="At Hive" && \(nowUnix\(\)-ActiveHotkeys\[key\]\[4\]\)>ActiveHotkeys\[key\]\[3\]\) \{\r?\n\t\t\tHotkeyNum:=ActiveHotkeys\[key\]\[2\]\r?\n\t\t\tsend "\{sc00" HotkeyNum\+1 "\}"\r?\n\t\t\tLastHotkeyN:=nowUnix\(\)\r?\n\t\t\tIniWrite LastHotkeyN, "settings\\nm_config\.ini", "Boost", "LastHotkey" HotkeyNum\r?\n\t\t\tActiveHotkeys\[key\]\[4\]:=LastHotkeyN\r?\n\t\t\tbreak\r?\n\t\t\}\r?\n)(\t\t;snowflake)'
+        boostHotbarInsert := '$1`t`t;whileboosted`r`n`t`telse if((ActiveHotkeys[key][1]="WhileBoosted") && nm_GatherBoostInterrupt() && (nowUnix()-ActiveHotkeys[key][4])>ActiveHotkeys[key][3]) {`r`n`t`t`tHotkeyNum:=ActiveHotkeys[key][2]`r`n`t`t`tsend "{sc00" HotkeyNum+1 "}"`r`n`t`t`tLastHotkeyN:=nowUnix()`r`n`t`t`tIniWrite LastHotkeyN, "settings\nm_config.ini", "Boost", "LastHotkey" HotkeyNum`r`n`t`t`tActiveHotkeys[key][4]:=LastHotkeyN`r`n`t`t`tbreak`r`n`t`t}`r`n$2'
+        cNew := RegExReplace(c, boostHotbarPattern, boostHotbarInsert, &boostHotbarCount, 1)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Added WhileBoosted hotbar branch to nm_hotbar`n", logFile)
+        } else if (boostHotbarCount = 0) {
+            FileAppend("! Could not locate nm_hotbar at-hive/snowflake block for WhileBoosted insertion`n", logFile)
+        }
+    }
+    if InStr(c, 'GatherFieldBoosted && (ActiveHotkeys[key][1]="WhileBoosted")') && !InStr(c, 'nm_GatherBoostInterrupt() && (ActiveHotkeys[key][1]="WhileBoosted")') {
+        cNew := StrReplace(c, 'GatherFieldBoosted && (ActiveHotkeys[key][1]="WhileBoosted")', 'nm_GatherBoostInterrupt() && (ActiveHotkeys[key][1]="WhileBoosted")')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Normalized legacy WhileBoosted gate to nm_GatherBoostInterrupt()`n", logFile)
+        }
+    }
+    if InStr(c, 'ActiveHotkeys[key][1]="Boosted"') && !InStr(c, 'ActiveHotkeys[key][1]="WhileBoosted"') {
+        cNew := StrReplace(c, 'ActiveHotkeys[key][1]="Boosted"', 'ActiveHotkeys[key][1]="WhileBoosted"')
+        if (cNew != c) {
+            c := cNew
+            FileAppend("✓ Normalized legacy boosted hotbar matcher to WhileBoosted`n", logFile)
+        }
+    }
 
     ; 1c. Extensions Config
     if (patchTadSyncCore || patchMondoHop || patchMondoInterrupt || patchGlitterExtend || patchEnzymeBalloon) && !InStr(c, 'config["Extensions"]') {
@@ -1028,6 +1103,34 @@ if FileExist(natroPath) {
         }
     } else if InStr(c, '"PresetTimedEnable"') {
         FileAppend("? Preset defaults already present`n", logFile)
+    }
+    if (InStr(c, 'config["Settings"] := Map(') && !InStr(c, '"PresetCycleEnabled"')) {
+        settingsNeedle := JoinLines(
+            '		, "PresetTimedEnable", 0',
+            '		, "lastPresetChange", 0',
+            '		, "IgnoreUpdateVersion", ""'
+        )
+        settingsInsert := JoinLines(
+            '		, "PresetTimedEnable", 0',
+            '		, "lastPresetChange", 0',
+            '		, "PresetCycleEnabled", 0',
+            '		, "PresetCycleSlotA", ""',
+            '		, "PresetCycleSlotB", ""',
+            '		, "PresetCycleIntervalHours", 1',
+            '		, "PresetCycleRepeat", 0',
+            '		, "PresetCycleActiveSlot", ""',
+            '		, "PresetCycleLastSwitch", 0',
+            '		, "IgnoreUpdateVersion", ""'
+        )
+        cNew := StrReplace(c, settingsNeedle, settingsInsert)
+        if (cNew != c) {
+            c := cNew
+            FileAppend("? Added preset cycle defaults to config['Settings']`n", logFile)
+        } else {
+            FileAppend("! Preset cycle defaults skipped; settings anchor not found`n", logFile)
+        }
+    } else if InStr(c, '"PresetCycleEnabled"') {
+        FileAppend("? Preset cycle defaults already present`n", logFile)
     }
     presetLauncherOld := 'MainGui.Add("Button", "x145 y260 w65 h20 -Wrap Disabled vStopButton", " Stop (" StopHotkey ")").OnEvent("Click", nm_StopButton)'
     presetLauncherNew := JoinLines(
@@ -1506,6 +1609,7 @@ if FileExist(natroPath) {
     }
     ; 1c4. Preset cycle dialog and helper functions
     presetCycleHelperNeedles := [
+        'nm_PresetCycleEnsureDefaults() {',
         'nm_PresetCycleGUI(*) {',
         'nm_PresetCycleLaunch(*) {',
         'nm_PresetCycleGuiClose(*) {',
@@ -1521,13 +1625,36 @@ if FileExist(natroPath) {
         'nm_PresetCycleTick(force := 0) {'
     ]
     presetCycleHelperPresent := HasAllNeedles(c, presetCycleHelperNeedles)
-    presetCycleHelperMarkersPresent := InStr(c, 'nm_PresetCycleGUI(*){}') || InStr(c, 'nm_PresetCycleApplyNow(*) {') || InStr(c, 'nm_PresetCycleTick()') || InStr(c, 'nm_PresetCycleUpdateStateText()')
-    if !presetCycleHelperPresent && (InStr(c, 'nm_PresetCycleGUI(*){}') || InStr(c, 'nm_AutoStartManager(*){')) {
+    presetCycleHelperMarkersPresent := InStr(c, 'nm_PresetCycleEnsureDefaults() {') || InStr(c, 'nm_PresetCycleGUI(*){}') || InStr(c, 'nm_PresetCycleApplyNow(*) {') || InStr(c, 'nm_PresetCycleTick()') || InStr(c, 'nm_PresetCycleUpdateStateText()')
+    if !presetCycleHelperPresent && (presetCycleHelperMarkersPresent || InStr(c, 'nm_AutoStartManager(*){')) {
         presetCycleDialogBlock := JoinLines(
+            'nm_PresetCycleEnsureDefaults() {',
+            '	global PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
+            '	if !IsSet(PresetCycleEnabled)',
+            '		PresetCycleEnabled := 0',
+            '	if !IsSet(PresetCycleSlotA)',
+            '		PresetCycleSlotA := ""',
+            '	if !IsSet(PresetCycleSlotB)',
+            '		PresetCycleSlotB := ""',
+            '	if !IsSet(PresetCycleIntervalHours)',
+            '		PresetCycleIntervalHours := 1',
+            '	if !IsSet(PresetCycleRepeat)',
+            '		PresetCycleRepeat := 0',
+            '	if !IsSet(PresetCycleActiveSlot)',
+            '		PresetCycleActiveSlot := ""',
+            '	if !IsSet(PresetCycleLastSwitch)',
+            '		PresetCycleLastSwitch := 0',
+            '	PresetCycleIntervalHours := ValidateNumber(&PresetCycleIntervalHours, 1)',
+            '	if (PresetCycleIntervalHours < 1)',
+            '		PresetCycleIntervalHours := 1',
+            '	PresetCycleLastSwitch := ValidateNumber(&PresetCycleLastSwitch, 0)',
+            '}',
+            '',
             'nm_PresetCycleGUI(*) {',
             '	global MainGui, PresetCycleGui, PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
             '	local GuiCtrl',
             '',
+            '	nm_PresetCycleEnsureDefaults()',
             '	try {',
             '		if (IsSet(PresetCycleGui) && IsObject(PresetCycleGui)) {',
             '			try PresetCycleGui.Destroy()',
@@ -1584,6 +1711,7 @@ if FileExist(natroPath) {
             '}',
             'nm_PresetCycleSyncGui(*) {',
             '	global PresetCycleGui, PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
+            '	nm_PresetCycleEnsureDefaults()',
             '	if !(IsSet(PresetCycleGui) && IsObject(PresetCycleGui))',
             '		return',
             '	try {',
@@ -1598,6 +1726,7 @@ if FileExist(natroPath) {
             'nm_PresetCycleUpdateStateText(*) {',
             '	global PresetCycleGui, PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
             '		, MacroState',
+            '	nm_PresetCycleEnsureDefaults()',
             '	if !(IsSet(PresetCycleGui) && IsObject(PresetCycleGui))',
             '		return',
             '	slotA := nm_PresetCycleNormalizePresetId(PresetCycleSlotA), slotB := nm_PresetCycleNormalizePresetId(PresetCycleSlotB)',
@@ -1619,6 +1748,7 @@ if FileExist(natroPath) {
             '}',
             'nm_PresetCycleSave(GuiCtrl?, *) {',
             '	global PresetCycleGui, PresetCycleEnabled, PresetCycleSlotA, PresetCycleSlotB, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
+            '	nm_PresetCycleEnsureDefaults()',
             '	if !(IsSet(PresetCycleGui) && IsObject(PresetCycleGui))',
             '		return',
             '	PresetCycleEnabled := PresetCycleGui["PresetCycleEnabled"].Value ? 1 : 0',
@@ -1648,10 +1778,7 @@ if FileExist(natroPath) {
             '	if !(IsSet(PresetCycleGui) && IsObject(PresetCycleGui))',
             '		return',
             '	slot := (GuiCtrl.Name = "PresetCycleBrowseA") ? "A" : "B"',
-            '	path := FileSelect(1, A_WorkingDir "\patterns", "Select Pattern File", "AHK Files (*.ahk)")',
-            '	if (path = "")',
-            '		return',
-            '	try PresetCycleGui["PresetCycleSlot" slot].Text := nm_PresetCycleNormalizePresetId(path)',
+            '	try PresetCycleGui["PresetCycleSlot" slot].Text := nm_PresetCycleNormalizePresetId(FileSelect(1, A_WorkingDir "\patterns", "Select Pattern File", "AHK Files (*.ahk)"))',
             '	nm_PresetCycleSave()',
             '}',
             'nm_PresetCycleClear(GuiCtrl, *) {',
@@ -1702,6 +1829,7 @@ if FileExist(natroPath) {
             '		, PresetCycleIntervalHours, PresetCycleRepeat, PresetCycleActiveSlot, PresetCycleLastSwitch',
             '	static lastNotice := ""',
             '',
+            '	nm_PresetCycleEnsureDefaults()',
             '	if (!PresetCycleEnabled) {',
             '		notice := "Scheduler disabled"',
             '		if (notice != lastNotice) {',
@@ -1797,13 +1925,26 @@ if FileExist(natroPath) {
         if InStr(c, 'nm_PresetCycleGUI(*){}') {
             cNew := StrReplace(c, 'nm_PresetCycleGUI(*){}', presetCycleDialogBlock)
         } else {
-            cNew := StrReplace(c, 'nm_AutoStartManager(*){', presetCycleDialogBlock "`r`n`r`nnm_AutoStartManager(*){")
+            presetCycleStart := InStr(c, 'nm_PresetCycleEnsureDefaults() {')
+            if !presetCycleStart
+                presetCycleStart := InStr(c, 'nm_PresetCycleGUI(*) {')
+            presetCycleEnd := presetCycleStart ? InStr(c, 'nm_AutoStartManager(*){', 1, presetCycleStart) : 0
+            if (presetCycleStart && presetCycleEnd && presetCycleEnd > presetCycleStart) {
+                cNew := SubStr(c, 1, presetCycleStart - 1) presetCycleDialogBlock "`r`n`r`n" SubStr(c, presetCycleEnd)
+            } else if InStr(c, 'nm_AutoStartManager(*){') {
+                cNew := StrReplace(c, 'nm_AutoStartManager(*){', presetCycleDialogBlock "`r`n`r`nnm_AutoStartManager(*){")
+            } else {
+                cNew := c
+            }
         }
         if (cNew != c) {
             c := cNew
             presetCycleHelperPresent := HasAllNeedles(c, presetCycleHelperNeedles)
             if (presetCycleHelperPresent) {
-                FileAppend("? Added preset cycle dialog and helper functions`n", logFile)
+                if (presetCycleStart || InStr(c, 'nm_PresetCycleEnsureDefaults() {'))
+                    FileAppend("? Added/repaired preset cycle dialog and helper functions`n", logFile)
+                else
+                    FileAppend("? Added preset cycle dialog and helper functions`n", logFile)
             } else {
                 missingPresetCycleNeedles := GetMissingNeedles(c, presetCycleHelperNeedles)
                 FileAppend("! Preset cycle helper insertion completed but validation failed; missing: " StrJoin(missingPresetCycleNeedles, ", ") "`n", logFile)
@@ -2028,7 +2169,7 @@ if FileExist(natroPath) {
     if (patchBfb) {
     if !InStr(c, '"BlueBoosterInterruptCheck"') {
         configPattern := 'm)^(\s*, "CoconutBoosterCheck", [^\r\n]+)$'
-        configReplacement := '$1`r`n`t`t, "BlueBoosterInterruptCheck", 1`r`n`t`t, "LastBlueBoostUse", 1`r`n`t`t, "BlueBoostCheck", 1'
+        configReplacement := '$1`r`n`t`t, "BlueBoosterInterruptCheck", 1`r`n`t`t, "LastBlueBoostUse", 1`r`n`t`t, "PreGlitterStart", 0`r`n`t`t, "PreGlitterField", "None"`r`n`t`t, "BlueBoostCheck", 1'
         cNew := RegExReplace(c, configPattern, configReplacement, &bfbConfigCount, 1)
         if (bfbConfigCount > 0 && cNew != c) {
             c := cNew
@@ -2341,7 +2482,7 @@ if FileExist(natroPath) {
     ; 1c10. BFB timer wiring in nm_toBooster()
     cNew := RegExReplace(c
         , '(?m)^\tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost(?:, LastBlueBoostUse)?(?:, ForceBlueBoosterInterrupt)?(?:, GatherFieldBoostedStart)?(?:, CurrentField)?(?:, LastBlueBoostUse)?(?:, ForceBlueBoosterInterrupt)?(?:, GatherFieldBoostedStart)?(?:, CurrentField)?(?:, LastBlueBoostUse)?(?:, ForceBlueBoosterInterrupt)?(?:, GatherFieldBoostedStart)?(?:, CurrentField)?$'
-        , '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField'
+        , '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField, PreGlitterStart, PreGlitterField'
         , &count
         , 1
     )
@@ -2356,6 +2497,7 @@ if FileExist(natroPath) {
             '			if (location = "blue") {',
             '				LastBlueBoostUse := nowUnix()',
             '				IniWrite LastBlueBoostUse, "settings\nm_config.ini", "Boost", "LastBlueBoostUse"',
+            '				nm_ClearPreGlitterState()',
             '				GatherFieldBoostedStart := LastBlueBoostUse',
             '				IniWrite CurrentField, "settings\nm_config.ini", "Boost", "LastBoostedField"',
             '				IniWrite GatherFieldBoostedStart, "settings\nm_config.ini", "Boost", "LastBoostedTime"',
@@ -2424,7 +2566,7 @@ if FileExist(natroPath) {
     boosterIntroPattern := '(?ms)^nm_toBooster\(location\)\{\r?\n.*?^\tLoop 2 \{'
     boosterIntroReplacement := JoinLines(
         'nm_toBooster(location){',
-        '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField',
+        '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField, PreGlitterStart, PreGlitterField',
         '`tstatic blueBoosterFields:=["Pine Tree", "Bamboo", "Blue Flower", "Stump"], redBoosterFields:=["Rose", "Strawberry", "Mushroom", "Pepper"], mountainBoosterfields:=["Cactus", "Pumpkin", "Pineapple", "Spider", "Clover", "Dandelion", "Sunflower"], coconutBoosterfields:=["Coconut"]',
         '`ttadsync_RequestHiveStandby()',
         '`tif (location = "blue")',
@@ -2446,7 +2588,7 @@ if FileExist(natroPath) {
     )
     boosterIntroReplace := JoinLines(
         'nm_toBooster(location){',
-        '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField',
+        '`tglobal LastBlueBoost, LastRedBoost, LastMountainBoost, LastCoconutDis, RecentFBoost, LastBlueBoostUse, ForceBlueBoosterInterrupt, GatherFieldBoostedStart, CurrentField, PreGlitterStart, PreGlitterField',
         '`tstatic blueBoosterFields:=["Pine Tree", "Bamboo", "Blue Flower", "Stump"], redBoosterFields:=["Rose", "Strawberry", "Mushroom", "Pepper"], mountainBoosterfields:=["Cactus", "Pumpkin", "Pineapple", "Spider", "Clover", "Dandelion", "Sunflower"], coconutBoosterfields:=["Coconut"]',
         '`ttadsync_RequestHiveStandby()',
         '`tif (location = "blue")',
@@ -3457,6 +3599,8 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
     }
     c := EnsureConfigMapEntry(c, "Boost", "BlueBoosterInterruptCheck", patchBfb ? 1 : 0, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "LastBlueBoostUse", 1, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "PreGlitterStart", 0, &mapChanged)
+    c := EnsureConfigMapEntry(c, "Boost", "PreGlitterField", '"None"', &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "StickerStackInterruptCheck", patchStickerStack ? 1 : 0, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackUse", 1, &mapChanged)
     c := EnsureConfigMapEntry(c, "Boost", "LastStickerStackFail", 1, &mapChanged)
@@ -3645,11 +3789,11 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
             '`t)',
             '`tif (!mondoTriggered)',
             '`t`treturn 0',
-            '`tif (nm_IsBoostLeaseNearWindow()) {',
+            '`tif (nm_IsBoostLeaseNearWindow(105)) {',
             '`t`tif (state = "Converting")',
             '`t`t`tnm_ConvertRenewGlitter(FieldName)',
             '`t`telse',
-            '`t`t`tnm_DebugGlitterPress("Mondo Interrupt (Warning Window)", FieldName)',
+            '`t`t`tnm_DebugGlitterPress("Mondo Interrupt (105s Window)", FieldName)',
             '`t`treturn 0',
             '`t}',
             '`treturn 1',
@@ -3756,6 +3900,8 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         'nm_GatherBoostInterrupt() {',
         '	nm_ExpireBoostLeaseIfOver()',
         '	now := nowUnix()',
+        '	if nm_IsPreGlitterWindowActive()',
+        '		return nm_boostBypassCheck()',
         '	return (now < nm_GetBoostChaseDeadline()) || nm_boostBypassCheck()',
         '}'
     )
@@ -3788,22 +3934,45 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         '`treturn (timeUntilBlueReady <= 660 && timeUntilBlueReady > 600)',
         '}',
         'nm_HandlePinePreGlitter(fieldName, field_type){',
-        '`tglobal GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason, BoostLeaseNearDiscordNotice, PendingStickerStackAfterExtend',
+        '`tglobal GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason, BoostLeaseNearDiscordNotice, PendingStickerStackAfterExtend, PreGlitterStart, PreGlitterField',
         '',
         '`tif !nm_ShouldUsePinePreGlitter(fieldName, field_type)',
         '`t`treturn 0',
         '',
+        '`tLastGlitter := nowUnix()',
+        '`tPreGlitterStart := LastGlitter',
+        '`tPreGlitterField := fieldName',
         '`tnm_SpamGlitterKey()',
         '`tnm_DebugGlitterPress("Pine pre-glitter", fieldName)',
-        '`tLastGlitter := nowUnix()',
         '`tfieldOverrideReason := "Boost"',
         '`tBoostLeaseNearDiscordNotice := 0',
         '`tif (PendingStickerStackAfterExtend)',
         '`t`t`tnm_RunPendingStickerStackAfterExtend()',
         '`tIniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"',
+        '`tIniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"',
+        '`tIniWrite PreGlitterField, "settings\nm_config.ini", "Boost", "PreGlitterField"',
         '`tIniWrite fieldName, "settings\nm_config.ini", "Boost", "LastBoostedField"',
         '`tnm_setStatus("Boosted", "Pre-Glitter: Pine Tree")',
         '`treturn 1',
+        '}',
+        'nm_ClearPreGlitterState(){',
+        '`tglobal PreGlitterStart, PreGlitterField',
+        '',
+        '`tPreGlitterStart := 0',
+        '`tPreGlitterField := "None"',
+        '`tIniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"',
+        '`tIniWrite PreGlitterField, "settings\nm_config.ini", "Boost", "PreGlitterField"',
+        '`treturn 1',
+        '}',
+        'nm_IsPreGlitterWindowActive(){',
+        '`tglobal PreGlitterStart, PreGlitterField',
+        '',
+        '`tif (PreGlitterStart <= 0 || PreGlitterField = "" || PreGlitterField = "None")',
+        '`t`treturn 0',
+        '`tif ((nowUnix() - PreGlitterStart) < 660)',
+        '`t`treturn 1',
+        '`tnm_ClearPreGlitterState()',
+        '`treturn 0',
         '}',
         'nm_DiscordEscapeContent(text){',
         '`ttext := StrReplace(text, Chr(92), Chr(92) Chr(92))',
@@ -3977,7 +4146,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         . '(nowUnix()-LastGlitter)>900 && '
         . 'GlitterKey!="none" && fieldOverrideReason="None") { '
         . ';between 9 and 15 mins (-minus an extra 15 seconds)'
-    newGlitterGather525 := 'if(PFieldBoosted && '
+    newGlitterGather525 := 'if (!nm_HandlePinePreGlitter(FieldName, field_type) && PFieldBoosted && '
         . '(nowUnix()-GatherFieldBoostedStart)>870 && '
         . '(nowUnix()-GatherFieldBoostedStart)<900 && '
         . '(nowUnix()-LastGlitter)>900 && '
@@ -4122,11 +4291,11 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         if !InStr(mondoBlock, 'AltHopMondoEnabled') {
             pattern := '(nm_Mondo\(\)\{\r?\n\s*global [^\r\n]*LastGlitter)'
             c := RegExReplace(c, pattern, '$1, AltHopMondoEnabled, AltHopMondoState')
-            FileAppend("âœ“ Added Alt Hop globals to nm_Mondo`n", logFile)
+            FileAppend("✓ Added Alt Hop globals to nm_Mondo`n", logFile)
         } else if !InStr(mondoBlock, 'AltHopMondoState') {
             pattern := '(nm_Mondo\(\)\{\r?\n\s*global [^\r\n]*AltHopMondoEnabled)'
             c := RegExReplace(c, pattern, '$1, AltHopMondoState')
-            FileAppend("âœ“ Added AltHopMondoState global to nm_Mondo`n", logFile)
+            FileAppend("✓ Added AltHopMondoState global to nm_Mondo`n", logFile)
         }
     }
 
@@ -4189,7 +4358,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         cNew := RegExReplace(c, pattern, replacement, &count, 1)
         if (count > 0) {
             c := cNew
-            FileAppend("âœ“ Patched nm_Mondo early night exit for Alt Hop`n", logFile)
+            FileAppend("✓ Patched nm_Mondo early night exit for Alt Hop`n", logFile)
         }
     }
 
@@ -4200,7 +4369,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         cNew := RegExReplace(c, pattern, replacement, &count, 1)
         if (count > 0) {
             c := cNew
-            FileAppend("âœ“ Patched nm_Mondo kill-loop interrupt guard for Alt Hop`n", logFile)
+            FileAppend("✓ Patched nm_Mondo kill-loop interrupt guard for Alt Hop`n", logFile)
         }
     }
 
@@ -4239,7 +4408,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
     legacyPattern := 'ms)\r?\n\s*; Signal extension: kill\+loot done, ready to hop\r?\n\s*if \(AltHopMondoState\) \{\r?\n\s*AltHopMondoState := 1\r?\n\s*IniWrite AltHopMondoState, "settings\\nm_config\.ini", "Extensions", "AltHopMondoState"\r?\n\s*\}\r?\n'
     if RegExMatch(c, legacyPattern) {
         c := RegExReplace(c, legacyPattern, "`r`n")
-        FileAppend("âœ“ Removed legacy AltHopMondoState transition signal`n", logFile)
+        FileAppend("✓ Removed legacy AltHopMondoState transition signal`n", logFile)
     }
     if !InStr(c, 'tadsync_AfterMondoAttempt()') {
         pattern := 'm)^(\s*)LastMondoBuff:=nowUnix\(\)\r?\n\1IniWrite LastMondoBuff, "settings\\nm_config\.ini", "Collect", "LastMondoBuff"\r?\n'
@@ -4247,7 +4416,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         cNew := RegExReplace(c, pattern, replacement, &count, 1)
         if (count > 0) {
             c := cNew
-            FileAppend("âœ“ Injected tadsync_AfterMondoAttempt hook`n", logFile)
+            FileAppend("✓ Injected tadsync_AfterMondoAttempt hook`n", logFile)
         }
     }
     afterMondoNormalizePattern := '(?m)^(\s*)LastMondoBuff:=nowUnix\(\)\r?\n^\1IniWrite LastMondoBuff, "settings\\nm_config\.ini", "Collect", "LastMondoBuff"\r?\n(?:^\1if \(AltHopMondoState = 1 \|\| AltHopMondoState = 3\) \{\r?\n^\1\tadsync_AfterMondoAttempt\(\)\r?\n^\1\treturn\r?\n^\1\}\r?\n)+^\1return\r?\n'
@@ -4294,7 +4463,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         cNew := RegExReplace(c, pattern, replacement, &count, 1)
         if (count > 0) {
             c := cNew
-            FileAppend("âœ“ Injected reconnect override hook`n", logFile)
+            FileAppend("✓ Injected reconnect override hook`n", logFile)
         }
     }
 
@@ -4305,7 +4474,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         cNew := RegExReplace(c, pattern, replacement, &count, 1)
         if (count > 0) {
             c := cNew
-            FileAppend("âœ“ Injected reconnect success hook`n", logFile)
+            FileAppend("✓ Injected reconnect success hook`n", logFile)
         }
     }
     }
@@ -4329,10 +4498,31 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
 
     if InStr(c, 'tadsync_AltHop_SaveLootTime') {
         c := StrReplace(c, 'tadsync_AltHop_SaveLootTime', 'aq_MondoHopSaveLootTime')
-        FileAppend("âœ“ Updated Loot Time callback to aq_MondoHopSaveLootTime`n", logFile)
+        FileAppend("✓ Updated Loot Time callback to aq_MondoHopSaveLootTime`n", logFile)
     }
 
     ; Final hotbarwhilelist safety pass in case a later replacement restored the old list.
+    hotbarListHasWhileBoosted := false
+    hotbarListHasBoosted := false
+    if RegExMatch(c, 'm)^hotbarwhilelist\s*:=\s*\[(?<list>[^\]]*)\]', &hotbarMatch) {
+        hotbarListHasWhileBoosted := InStr(hotbarMatch["list"], '"WhileBoosted"') > 0
+        hotbarListHasBoosted := InStr(hotbarMatch["list"], '"Boosted"') > 0
+    }
+    if !hotbarListHasWhileBoosted {
+        if hotbarListHasBoosted {
+            cNew := RegExReplace(c, 'm)^hotbarwhilelist\s*:=\s*\[\s*"Never"\s*,\s*"Always"\s*,\s*"Boosted"(\s*,)', 'hotbarwhilelist := ["Never","Always","WhileBoosted"$1', , 1)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Normalized legacy Boosted entry out of hotbarwhilelist in final safety pass`n", logFile)
+            }
+        } else {
+            cNew := RegExReplace(c, 'm)^(hotbarwhilelist\s*:=\s*\[\s*"Never"\s*,\s*"Always")(\s*,)', '$1,"WhileBoosted"$2', , 1)
+            if (cNew != c) {
+                c := cNew
+                FileAppend("? Re-applied WhileBoosted to hotbarwhilelist after later patch steps`n", logFile)
+            }
+        }
+    }
     if (patchGlitterExtend) {
         hotbarListHasGlitter := false
         if RegExMatch(c, 'm)^hotbarwhilelist\s*:=\s*\[(?<list>[^\]]*)\]', &hotbarMatch)
@@ -4454,6 +4644,8 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
                 leaseHelpersCoreText := RegExReplace(leaseHelpersText, '(?ms)^.*?; BOOST LEASE HELPERS START\r?\n', '')
                 leaseHelperNames := [
                     'nm_HandlePinePreGlitter',
+                    'nm_ClearPreGlitterState',
+                    'nm_IsPreGlitterWindowActive',
                     'nm_DiscordEscapeContent',
                     'nm_ResolveBoostLeaseDiscordChannel',
                     'nm_NotifyBoostLeaseDiscord',
@@ -4835,7 +5027,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
                     FileAppend("! Temp natro validation failed: " validationError "`n", logFile)
                 } catch {
                 }
-                msg .= "âš  FAILED to validate patched natro temp file; skipping natro write`n"
+                msg .= "⚠ FAILED to validate patched natro temp file; skipping natro write`n"
             }
         } else {
             try {
@@ -4934,7 +5126,7 @@ stickerGoGatherGlobalsPattern := '(\s*, BoostChaserCheck, LastBlueBoost, LastRed
         }
     }
 } else {
-    msg .= "· natro_macro.ahk no changes needed`n"
+    msg .= "Â· natro_macro.ahk no changes needed`n"
 }
 
 ; 1a0c. Keep boost trace logging cheap: log the gather-scan phase only.
@@ -4960,8 +5152,8 @@ tadsyncExtensionPath := workDir "\Extensions\rays_tadsync_extension.ahk"
             FileAppend("? Simplified rays_tadsync boost trace logger`n", logFile)
         }
     } catch as e {
-        msg .= "âš  FAILED to simplify rays_tadsync boost trace logger: " e.Message "`n"
-        try FileAppend("âš  FAILED to simplify rays_tadsync boost trace logger: " e.Message "`n", logFile)
+        msg .= "⚠ FAILED to simplify rays_tadsync boost trace logger: " e.Message "`n"
+        try FileAppend("⚠ FAILED to simplify rays_tadsync boost trace logger: " e.Message "`n", logFile)
     }
 }
 
@@ -5024,6 +5216,8 @@ if FileExist(statusPath) {
             'settings["StickerStackInterruptCheck"] := {enum: ResolveEnumInt("StickerStackInterruptCheck", 371), type: "int", section: "Boost", regex: "i)^(0|1)$"}',
             'settings["PFieldBoosted"] := {enum: ResolveEnumInt("PFieldBoosted", 372), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
             'settings["PreGlitterCheck"] := {enum: ResolveEnumInt("PreGlitterCheck", 373), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
+            'settings["PreGlitterStart"] := {enum: ResolveEnumInt("PreGlitterStart", 379), type: "int", section: "Boost", regex: "i)^\d{1,10}$"}',
+            'settings["PreGlitterField"] := {enum: ResolveEnumInt("PreGlitterField", 380), type: "str", section: "Boost", regex: "i)^(None|Pine Tree)$"}',
             'settings["EnzymesBoostedOnly"] := {enum: ResolveEnumInt("EnzymesBoostedOnly", 374), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
             'settings["MondoInterruptCheck"] := {enum: ResolveEnumInt("MondoInterruptCheck", 375), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
             'settings["ReconnectSyncCheck"] := {enum: ResolveEnumInt("ReconnectSyncCheck", 376), type: "int", section: "Extensions", regex: "i)^(0|1)$"}',
@@ -5100,6 +5294,27 @@ if FileExist(statusPath) {
                 '}'
             )
             c := StrReplace(c, aliasNeedle, aliasInsert)
+        }
+
+        hotbarRegexNeedle := JoinLines(
+            'settings["HotbarWhile2"] := {enum: 34, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}',
+            'settings["HotbarWhile3"] := {enum: 35, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}',
+            'settings["HotbarWhile4"] := {enum: 36, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}',
+            'settings["HotbarWhile5"] := {enum: 37, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}',
+            'settings["HotbarWhile6"] := {enum: 38, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}',
+            'settings["HotbarWhile7"] := {enum: 39, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter)$"}'
+        )
+        hotbarRegexInsert := JoinLines(
+            'settings["HotbarWhile2"] := {enum: 34, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}',
+            'settings["HotbarWhile3"] := {enum: 35, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}',
+            'settings["HotbarWhile4"] := {enum: 36, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}',
+            'settings["HotbarWhile5"] := {enum: 37, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}',
+            'settings["HotbarWhile6"] := {enum: 38, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}',
+            'settings["HotbarWhile7"] := {enum: 39, type: "str", section: "Boost", regex: "i)^(Never|Always|At Hive|Gathering|Attacking|Microconverter|Whirligig|Enzymes|GatherStart|Snowflake|Glitter|WhileBoosted)$"}'
+        )
+        cNew := StrReplace(c, hotbarRegexNeedle, hotbarRegexInsert)
+        if (cNew != c) {
+            c := cNew
         }
 
         c := StrReplace(c, '					sections[v.section] .= "`n" k', '					sections[v.section] .= "`n" ((k = "PFieldBoosted") ? "GlitterExtend" : k)')
@@ -5548,9 +5763,9 @@ if FileExist(reconnectSyncPath) {
         try {
             FileDelete(reconnectSyncPath)
             FileAppend(c, reconnectSyncPath, "UTF-8")
-            msg .= "âœ“ reconnectsync_status_extension.ahk patched`n"
+            msg .= "✓ reconnectsync_status_extension.ahk patched`n"
         } catch {
-            msg .= "âš  FAILED to write reconnectsync_status_extension.ahk`n"
+            msg .= "⚠ FAILED to write reconnectsync_status_extension.ahk`n"
         }
     }
 }
@@ -6194,6 +6409,8 @@ if FileExist(configPath) {
     if patchBfb {
         c := EnsureIniKey(c, "Boost", "BlueBoosterInterruptCheck", 1, &cfgChanged)
         c := EnsureIniKey(c, "Boost", "LastBlueBoostUse", 1, &cfgChanged)
+        c := EnsureIniKey(c, "Boost", "PreGlitterStart", 0, &cfgChanged)
+        c := EnsureIniKey(c, "Boost", "PreGlitterField", "None", &cfgChanged)
         c := EnsureIniKey(c, "Collect", "BlueBoostCheck", 1, &cfgChanged)
     } else {
         c := SetIniSectionKey(c, "Boost", "BlueBoosterInterruptCheck", 0, &cfgChanged)
@@ -6214,6 +6431,13 @@ if FileExist(configPath) {
         c := EnsureIniKey(c, "Status", "SessionBamboo", 0, &cfgChanged)
     }
     c := EnsureIniKey(c, "Extensions", "MondoInterruptCheck", 1, &cfgChanged)
+    c := EnsureIniKey(c, "Settings", "PresetCycleEnabled", 0, &cfgChanged)
+    c := EnsureIniSectionKey(c, "Settings", "PresetCycleSlotA", "", &cfgChanged)
+    c := EnsureIniSectionKey(c, "Settings", "PresetCycleSlotB", "", &cfgChanged)
+    c := EnsureIniKey(c, "Settings", "PresetCycleIntervalHours", 1, &cfgChanged)
+    c := EnsureIniKey(c, "Settings", "PresetCycleRepeat", 0, &cfgChanged)
+    c := EnsureIniSectionKey(c, "Settings", "PresetCycleActiveSlot", "", &cfgChanged)
+    c := EnsureIniKey(c, "Settings", "PresetCycleLastSwitch", 0, &cfgChanged)
     if patchGlitterExtend {
         c := EnsureIniKey(c, "Extensions", "PFieldBoosted", 0, &cfgChanged)
         c := EnsureIniKey(c, "Extensions", "PreGlitterCheck", 0, &cfgChanged)
@@ -6387,6 +6611,9 @@ while (finalAttempts < 6) {
     }
 }
 MsgBox(msg, "TadSync Patch", 0x40)
+
+
+
 
 
 

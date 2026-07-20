@@ -1,12 +1,16 @@
 nm_HandlePinePreGlitter(fieldName, field_type){
-	global GlitterKey, LastGlitter, GatherFieldBoostedStart, PFieldBoostExtend, fieldOverrideReason, BoostLeaseNearDiscordNotice, PendingStickerStackAfterExtend
+	global GlitterKey, LastGlitter, GatherFieldBoostedStart, PFieldBoostExtend, fieldOverrideReason, BoostLeaseNearDiscordNotice, PendingStickerStackAfterExtend, PreGlitterStart, PreGlitterField
 
 	if !nm_ShouldUsePinePreGlitter(fieldName, field_type)
 		return 0
 
 	PFieldBoostExtend := 1
 	LastGlitter := nowUnix()
+	PreGlitterStart := LastGlitter
+	PreGlitterField := fieldName
 	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	IniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"
+	IniWrite PreGlitterField, "settings\nm_config.ini", "Boost", "PreGlitterField"
 	nm_SpamGlitterKey()
 	nm_DebugGlitterPress("Pine pre-glitter", fieldName)
 	fieldOverrideReason := "Boost"
@@ -16,6 +20,27 @@ nm_HandlePinePreGlitter(fieldName, field_type){
 	if (PendingStickerStackAfterExtend)
 		nm_RunPendingStickerStackAfterExtend()
 	return 1
+}
+
+nm_ClearPreGlitterState(){
+	global PreGlitterStart, PreGlitterField
+
+	PreGlitterStart := 0
+	PreGlitterField := "None"
+	IniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"
+	IniWrite PreGlitterField, "settings\nm_config.ini", "Boost", "PreGlitterField"
+	return 1
+}
+
+nm_IsPreGlitterWindowActive(){
+	global PreGlitterStart, PreGlitterField
+
+	if (PreGlitterStart <= 0 || PreGlitterField = "" || PreGlitterField = "None")
+		return 0
+	if ((nowUnix() - PreGlitterStart) < 660)
+		return 1
+	nm_ClearPreGlitterState()
+	return 0
 }
 
 nm_DiscordEscapeContent(text){
@@ -185,7 +210,8 @@ nm_IsBoostLeaseNearWindow(sec := 60){
 	if (!PFieldBoosted || GlitterKey = "none" || GatherFieldBoostedStart <= 0 || (nowUnix() - LastGlitter) <= 900)
 		return 0
 	leaseAge := nowUnix() - GatherFieldBoostedStart
-	if (leaseAge >= 840 && leaseAge < 900) {
+	triggerAge := 900 - sec
+	if (leaseAge >= triggerAge && leaseAge < 900) {
 		if (!BoostLeaseNearDiscordNotice) {
 			BoostLeaseNearDiscordNotice := 1
 			nm_NotifyBoostLeaseDiscord("Near Glitter Phase", "Entered the near-glitter warning window")

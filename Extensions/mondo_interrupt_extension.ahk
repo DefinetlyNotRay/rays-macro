@@ -28,17 +28,17 @@ mondointerrupt_ReturnToHiveAndConvert() {
 	nm_setStatus("Traveling", "Returning from Mondo Interrupt")
 	nm_Reset(2, 2000, 0, 1)
 	findHiveSlot := Func("nm_findHiveSlot")
-	return (findHiveSlot.MaxParams >= 2) ? findHiveSlot.Call(1, 1) : findHiveSlot.Call()
+	return (findHiveSlot.MaxParams >= 2) ? findHiveSlot.Call(1, 0) : findHiveSlot.Call()
 }
 
 mondointerrupt_TryPreExitGlitter(fieldName) {
 	global GlitterKey, LastGlitter, GatherFieldBoostedStart, fieldOverrideReason, BoostLeaseNearDiscordNotice
 
-	if !nm_IsBoostLeaseNearWindow()
+	if !nm_IsBoostLeaseNearWindow(105)
 		return false
 
 	nm_SpamGlitterKey()
-	nm_DebugGlitterPress("Mondo Interrupt (Warning Window)", fieldName)
+	nm_DebugGlitterPress("Mondo Interrupt (105s Window)", fieldName)
 	LastGlitter := nowUnix()
 	GatherFieldBoostedStart := LastGlitter
 	fieldOverrideReason := "Boost"
